@@ -2,33 +2,37 @@
 
 **LLM-powered transaction classifier with confidence-based classification using Gemini API**
 
-Automatically classify expenses into budget jars with intelligent confidence scoring - no confirmation prompts needed!
+Automatically classify expenses into budget jars with intelligent confidence scoring - no confirmation prompts needed for high-confidence transactions!
 
 ## 🎯 What This Does
 
 Test how well Gemini LLM can:
 - **Classify multiple transactions** in a single input with multiple tool calls
-- **Provide confidence scores** (0-100%) for classification certainty
+- **Provide confidence scores** (0-100%) for classification certainty with visual indicators
 - **Handle Vietnamese language** inputs and cultural context
 - **Extract amounts** from various formats (dollars, k, Vietnamese currency)
 - **Use transaction history** for pattern recognition and improved accuracy
+- **Make smart decisions** about when to ask for confirmation vs. auto-classify
 
 ## 🛠️ LLM Tools Available
 
 The LLM intelligently chooses from these tools based on transaction analysis:
 
 ### **1. `add_money_to_jar_with_confidence(amount, jar_name, confidence)`**
-**Purpose:** Add money to jar with confidence score (0-100%)
+**Purpose:** Add money to jar with confidence score and visual feedback
 
 **Confidence Levels:**
-- **90-100%**: ✅ Very certain (exact keyword match, clear transaction)
-- **70-89%**: ⚠️ Moderately certain (good match but some ambiguity)  
-- **50-69%**: ❓ Uncertain (multiple possible jars, please verify)
+- **90-100%**: ✅ Very certain - auto-classify (exact keyword match, clear transaction)
+- **70-89%**: ⚠️ Moderately certain - auto-classify with warning (good match but some ambiguity)  
+- **50-69%**: ❓ Uncertain - should use ask_for_confirmation instead
 
-### **2. `report_no_suitable_jar(description, suggestion)`**
+### **2. `ask_for_confirmation(amount, jar_name, reason)`**
+**Purpose:** Ask for user confirmation when classification is uncertain
+
+### **3. `report_no_suitable_jar(description, suggestion)`**
 **Purpose:** Report when no existing jar matches the transaction
 
-### **3. `request_more_info(question)`**
+### **4. `request_more_info(question)`**
 **Purpose:** Ask for clarification when input lacks essential information
 
 ## 📊 Available Budget Jars
@@ -73,10 +77,22 @@ python -c "from main import classify_simple; print(classify_simple('meal 20 doll
 
 ## 🧪 Example Scenarios
 
-### **Single Transaction (High Confidence)**
+### **Single Transaction (High Confidence - Auto-classify)**
 ```
 Input: "gas 50 dollar"
 Output: 🔧 add_money_to_jar_with_confidence() → ✅ Added $50.0 to gas jar (95% confident)
+```
+
+### **Single Transaction (Medium Confidence - Auto-classify with Warning)**
+```
+Input: "coffee 5 dollar"
+Output: 🔧 add_money_to_jar_with_confidence() → ⚠️ Added $5.0 to meals jar (75% confident - moderate certainty)
+```
+
+### **Uncertain Transaction (Ask for Confirmation)**
+```
+Input: "shopping 30 dollar"
+Output: 🔧 ask_for_confirmation() → ❓ Add $30.0 to groceries jar? Could be groceries or entertainment items. Confirm (y/n):
 ```
 
 ### **Multiple Transactions (Mixed Confidence)**
@@ -127,8 +143,9 @@ Run `python test.py` for comprehensive testing:
 - `quit` - Exit testing
 
 ### **Test Categories:**
-- **High Confidence**: Clear transactions (gas, meals, rent)
-- **Medium Confidence**: Ambiguous items (snack, coffee)
+- **High Confidence (90-100%)**: Clear transactions (gas, meals, rent) → Auto-classify with ✅
+- **Medium Confidence (70-89%)**: Somewhat ambiguous (coffee, snack) → Auto-classify with ⚠️
+- **Low Confidence (<70%)**: Ambiguous items → Use ask_for_confirmation with ❓
 - **Multi-Transaction**: Various separator formats (comma, semicolon, "and")
 - **Vietnamese Inputs**: Cultural context and language support
 - **Edge Cases**: No jar matches, insufficient information
@@ -164,8 +181,9 @@ classifier_test/
 ## 🎯 Key Features
 
 ### **✅ Confidence-Based Processing**
-- **No confirmation prompts** - everything processes automatically
-- **Transparent confidence levels** - see how certain the system is
+- **Smart auto-classification** - high confidence (90-100%) processes automatically
+- **Moderate confidence warning** - medium confidence (70-89%) processes with ⚠️ indicator  
+- **Uncertainty handling** - low confidence (<70%) asks for confirmation
 - **Visual indicators** - ✅ ⚠️ ❓ for quick confidence assessment
 
 ### **✅ Multi-Transaction Support**  
@@ -192,10 +210,10 @@ classifier_test/
 - LLM responded directly instead of using tools
 - Try rephrasing input or enable debug mode
 
-**Low confidence scores on obvious transactions:**
+**Unrealistic confidence scores:**
 - Check if jar names match exactly
 - Verify transaction history provides good patterns
-- Consider adjusting prompt guidelines
+- Consider adjusting prompt guidelines in `prompt.py`
 
 **Tool call format errors:**
 - Ensure LangChain and Google GenerativeAI versions are compatible
@@ -204,9 +222,10 @@ classifier_test/
 ## 🏆 Success Criteria
 
 - ✅ **Accurate confidence scoring** - matches human intuition about certainty
+- ✅ **Smart decision making** - knows when to auto-classify vs ask for confirmation
 - ✅ **Multi-transaction processing** - handles complex inputs correctly  
 - ✅ **Vietnamese language support** - processes cultural context appropriately
 - ✅ **Format flexibility** - extracts amounts from various input styles
 - ✅ **Pattern recognition** - uses transaction history effectively
 - ✅ **Tool selection** - chooses appropriate tools based on context
-- ✅ **No workflow interruption** - processes everything automatically with transparency 
+- ✅ **Minimal workflow interruption** - auto-processes high confidence transactions with transparency 
