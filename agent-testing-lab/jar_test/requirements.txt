@@ -1,0 +1,14 @@
+# Jar Manager Test Lab Dependencies
+# =================================
+
+# Core LLM and tools
+langchain-core>=0.1.0
+langchain-google-genai>=1.0.0
+
+# Configuration management
+python-dotenv>=1.0.0
+
+# Google API client (for Gemini)
+google-generativeai>=0.3.0
+
+# Utilities (uuid is built-in, datetime is built-in)

@@ -1,0 +1,27 @@
+# Knowledge Base Agent Dependencies
+# Core Requirements for ReAct Framework and Knowledge Base
+
+# LLM and Language Processing
+langchain-google-genai>=2.0.0
+langchain-core>=0.3.0
+langchain-community>=0.3.0
+
+# Environment and Configuration
+python-dotenv>=1.0.0
+
+# Search and Web Tools
+duckduckgo-search>=6.0.0
+
+# Core Python Libraries (usually included but for clarity)
+typing-extensions>=4.8.0
+
+# Development and Testing (optional)
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+
+# For enhanced logging and debugging (optional)
+rich>=13.0.0
+
+# API clients and HTTP requests
+requests>=2.31.0
+httpx>=0.25.0 
