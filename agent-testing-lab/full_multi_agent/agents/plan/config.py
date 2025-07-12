@@ -35,8 +35,8 @@ class Config:
     max_memory_turns: int = 10
     
     # Testing and debug
-    debug_mode: bool = False
-    verbose_logging: bool = False
+    debug_mode: bool = True
+    verbose_logging: bool = True
     
     def __post_init__(self):
         """Load from environment variables."""

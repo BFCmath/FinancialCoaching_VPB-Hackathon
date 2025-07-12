@@ -8,8 +8,9 @@ All operations and utility functions are in utils.py.
 
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict, field
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
+import random
 
 # =============================================================================
 # CONVERSATION LOCK SYSTEM (Active Agent Context)
@@ -26,6 +27,18 @@ def set_active_agent_context(agent_name: Optional[str] = None):
 def get_active_agent_context() -> Optional[str]:
     """Get current conversation lock agent"""
     return ACTIVE_AGENT_CONTEXT
+
+# =============================================================================
+# FEE MANAGER STATE (for follow-up/clarification)
+# =============================================================================
+FEE_MANAGER_STATE = {}
+
+def set_fee_manager_state(state: dict):
+    global FEE_MANAGER_STATE
+    FEE_MANAGER_STATE = state
+
+def get_fee_manager_state():
+    return FEE_MANAGER_STATE
 
 # =============================================================================
 # DATA STRUCTURES (Based on database.md)
@@ -179,6 +192,7 @@ JARS_STORAGE: Dict[str, Jar] = {
         amount=250.0
     )
 }
+
 # TRANSACTIONS storage - List of all transactions
 # Production: PostgreSQL + TimescaleDB for time-series optimization
 TRANSACTIONS_STORAGE: List[Transaction] = []
@@ -277,6 +291,102 @@ FEE_PATTERN_TYPES = [
     "weekly",          # Weekly schedule with specific days
     "monthly"          # Monthly schedule with specific dates
 ]
+
+# =============================================================================
+# MOCK TRANSACTION INITIALIZATION
+# =============================================================================
+
+# Only populate transactions if TRANSACTIONS_STORAGE is empty
+if not TRANSACTIONS_STORAGE:
+    # Helper function to generate random dates and times within the last 30 days
+    def random_date_time():
+        days_ago = random.randint(0, 30)
+        date = (datetime.now() - timedelta(days=days_ago)).strftime("%Y-%m-%d")
+        hour = random.randint(0, 23)
+        minute = random.randint(0, 59)
+        time = f"{hour:02d}:{minute:02d}"
+        return date, time
+
+    # Define realistic transaction templates for each jar
+    transaction_templates = {
+        "necessities": [
+            {"amount": 500.00, "description": "Monthly rent payment", "source": "vpbank_api"},
+            {"amount": 75.50, "description": "Grocery shopping at supermarket", "source": "manual_input"},
+            {"amount": 45.00, "description": "Electricity bill", "source": "vpbank_api"},
+            {"amount": 30.00, "description": "Internet subscription", "source": "text_input"},
+            {"amount": 20.00, "description": "Bus fare for the week", "source": "image_input"},
+            {"amount": 60.00, "description": "Water utility bill", "source": "vpbank_api"},
+            {"amount": 25.00, "description": "Gasoline for commuting", "source": "manual_input"},
+            {"amount": 15.00, "description": "Public parking fee", "source": "text_input"},
+            {"amount": 80.00, "description": "Weekly grocery restock", "source": "image_input"},
+            {"amount": 50.00, "description": "Insurance premium", "source": "vpbank_api"},
+        ],
+        "long_term_savings": [
+            {"amount": 100.00, "description": "Emergency fund deposit", "source": "manual_input"},
+            {"amount": 200.00, "description": "Savings for car down payment", "source": "vpbank_api"},
+            {"amount": 50.00, "description": "Vacation savings", "source": "text_input"},
+            {"amount": 75.00, "description": "Home renovation fund", "source": "manual_input"},
+            {"amount": 150.00, "description": "Future family planning", "source": "vpbank_api"},
+        ],
+        "play": [
+            {"amount": 15.00, "description": "Movie tickets", "source": "text_input"},
+            {"amount": 30.00, "description": "Dinner at local restaurant", "source": "image_input"},
+            {"amount": 25.00, "description": "Concert ticket", "source": "vpbank_api"},
+            {"amount": 10.00, "description": "Coffee with friends", "source": "manual_input"},
+            {"amount": 50.00, "description": "Weekend trip expenses", "source": "text_input"},
+        ],
+        "education": [
+            {"amount": 40.00, "description": "Online course subscription", "source": "vpbank_api"},
+            {"amount": 20.00, "description": "Book purchase for self-study", "source": "manual_input"},
+            {"amount": 100.00, "description": "Workshop registration fee", "source": "text_input"},
+            {"amount": 15.00, "description": "E-book for skill development", "source": "image_input"},
+            {"amount": 60.00, "description": "Seminar attendance fee", "source": "vpbank_api"},
+        ],
+        "financial_freedom": [
+            {"amount": 50.00, "description": "Stock investment", "source": "vpbank_api"},
+            {"amount": 75.00, "description": "Mutual fund contribution", "source": "manual_input"},
+            {"amount": 100.00, "description": "Bond purchase", "source": "vpbank_api"},
+            {"amount": 25.00, "description": "Dividend reinvestment", "source": "text_input"},
+            {"amount": 80.00, "description": "Retirement fund deposit", "source": "manual_input"},
+        ],
+        "give": [
+            {"amount": 20.00, "description": "Charity donation", "source": "manual_input"},
+            {"amount": 10.00, "description": "Gift for a friend", "source": "text_input"},
+            {"amount": 15.00, "description": "Local community support", "source": "image_input"},
+            {"amount": 25.00, "description": "Donation to animal shelter", "source": "vpbank_api"},
+            {"amount": 30.00, "description": "Fundraiser contribution", "source": "manual_input"},
+        ]
+    }
+
+    # Distribution weights for jars
+    jar_weights = {
+        "necessities": 0.4,  # More frequent due to daily essentials
+        "long_term_savings": 0.15,
+        "play": 0.2,
+        "education": 0.1,
+        "financial_freedom": 0.1,
+        "give": 0.05
+    }
+
+    # Generate 50 mock transactions
+    mock_transactions = []
+    for _ in range(50):
+        jar_name = random.choices(list(jar_weights.keys()), weights=list(jar_weights.values()), k=1)[0]
+        template = random.choice(transaction_templates[jar_name])
+        date, time = random_date_time()
+        
+        transaction = Transaction(
+            amount=template["amount"],
+            jar=jar_name,
+            description=template["description"],
+            date=date,
+            time=time,
+            source=template["source"]
+        )
+        mock_transactions.append(transaction)
+
+    # Append to TRANSACTIONS_STORAGE
+    TRANSACTIONS_STORAGE.extend(mock_transactions)
 
 # =============================================================================
 # SCHEMA VALIDATION CONSTANTS (DO NOT USE IN DEV LAB)

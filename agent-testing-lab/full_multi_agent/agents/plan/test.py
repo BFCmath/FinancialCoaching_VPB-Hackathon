@@ -3,7 +3,7 @@ Interactive Test for Budget Advisor Agent
 =========================================
 
 This script allows you to interactively test the Budget Advisor agent,
-focusing on financial planning and advisory with ReAct and follow-up.
+focusing on financial planning and advisory with ReAct, stages, and follow-up.
 
 Usage:
     python -m agents.plan.test
@@ -22,14 +22,12 @@ sys.path.append(grandparent_dir)
 
 # Import the agent interface and utilities
 from agents.plan.interface import get_agent_interface
-from utils import (
-    get_conversation_history, add_conversation_turn, get_all_jars, get_database_stats, get_all_budget_plans
-)
+from utils import get_conversation_history, add_conversation_turn, get_all_jars, get_database_stats, get_all_budget_plans
 from database import get_active_agent_context, set_active_agent_context
 
 def display_context():
-    # """Display current jars, plans, and database stats context."""
-    # print("\n📊 CURRENT CONTEXT")
+    """Display current jars, plans, and database stats context."""
+    print("\n📊 CURRENT CONTEXT")
     # print("=" * 50)
     
     # # Show available jars
@@ -38,8 +36,8 @@ def display_context():
     # for jar in jars:
     #     print(f"  • {jar.name}: ${jar.current_amount:.2f}/${jar.amount:.2f} - {jar.description}")
     
-    # Show budget plans
-    plans = get_all_budget_plans()
+    # # Show budget plans
+    # plans = get_all_budget_plans()
     # print("\n📋 Budget Plans:")
     # if plans:
     #     table_data = []
@@ -50,55 +48,37 @@ def display_context():
     #             plan.detail_description[:50] + "..." if len(plan.detail_description) > 50 else plan.detail_description,
     #             plan.jar_recommendations[:50] + "..." if plan.jar_recommendations and len(plan.jar_recommendations) > 50 else plan.jar_recommendations or "N/A"
     #         ])
+    #     headers = ["Name", "Status", "Description", "Jar Recommendations"]
     #     print(table_data)
     # else:
     #     print("No budget plans found.")
     
     # Show transaction stats
-    # stats = get_database_stats()
-    # print("\n💳 Transaction Stats:")
-    # print(f"  • Total Transactions: {stats['transactions']['count']}")
-    # print(f"  • Total Amount: {stats['transactions']['total_amount']}")
-    # print(f"  • Sources: {', '.join(stats['transactions']['sources'])}")
-    # print()
+    stats = get_database_stats()
+    print("\n💳 Transaction Stats:")
+    print(f"  • Total Transactions: {stats['transactions']['count']}")
+    print(f"  • Total Amount: {stats['transactions']['total_amount']}")
+    print(f"  • Sources: {', '.join(stats['transactions']['sources'])}")
+    print()
 
 def test_predefined_scenarios():
-    """Test with predefined scenarios covering different advisory operations."""
+    """Test with predefined scenarios covering different advisory operations and stages."""
     agent_interface = get_agent_interface()
     scenarios = [
-        # Basic plan creation
+        # Stage 1: Understanding and initial proposal
         ("help me save for a vacation", 
-         "Should create a vacation plan with jar recommendations"),
-        ("tôi muốn tiết kiệm cho chuyến du lịch", 
-         "Should handle Vietnamese: create travel savings plan"),
-        
-        # Data gathering and analysis
+         "Stage 1: Gather info and propose"),
+        # Simulate Stage 2: Feedback and refine
+        ("make it for $2000 in 6 months", 
+         "Stage 2: Refine proposal"),
+        # Stage 2 to 3: Acceptance
+        ("ACCEPT", 
+         "Stage 3: Finalize and apply"),
+        # Other scenarios
         ("analyze my spending last month", 
-         "Should fetch transactions and provide advice"),
-        ("how can I reduce necessities spending", 
-         "Should get jars/transactions and suggest adjustments"),
-         
-        # Plan adjustment
-        ("update my vacation plan to save more", 
-         "Should adjust existing plan with new jar proposals"),
-        ("pause my emergency fund plan", 
-         "Should change plan status"),
-         
-        # Retrieval
-        ("list my active plans", 
-         "Should retrieve active plans"),
-        ("show all completed goals", 
-         "Should get completed plans"),
-         
-        # Follow-up scenarios (simulate multi-turn)
-        ("I want to save $5000 for a car", 
-         "May ask for timeline if needed"),
-         
-        # Edge cases
-        ("what's my budget status", 
-         "Should get jars and plans"),
-        ("", 
-         "Should handle empty input"),
+         "Stage 1: Analyze and propose adjustments"),
+        ("update my vacation plan to $3000", 
+         "Stage 1-3: Adjust existing plan"),
     ]
     
     print("🧪 PREDEFINED TEST SCENARIOS")
@@ -140,6 +120,7 @@ def run_interactive_session():
     print("       Budget Advisor Agent Test")
     print("========================================")
     print("Get personalized financial advice and plans.")
+    print("In stage 2, type 'ACCEPT' to finalize.")
     print("Examples:")
     print("  - 'help me save for a vacation'")
     print("  - 'analyze my spending last month'")
