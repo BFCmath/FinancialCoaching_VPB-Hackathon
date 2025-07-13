@@ -87,7 +87,7 @@ Output: route_to_jar_manager(task_description="add vacation jar with 10% allocat
 Input: "I spent $100 on groceries and want to add a vacation jar with 15%"
 Output: route_to_multiple_workers(tasks=[
     {"worker": "transaction_classifier", "task_description": "log $100 grocery transaction"},
-    {"worker": "jar_manager", "task_description": "add vacation jar with 15% allocation"}
+    {"worker": "jar", "task_description": "add vacation jar with 15% allocation"}
 ])
 ```
 
@@ -98,7 +98,7 @@ Output: decompose_complex_request(
     user_request="...",
     identified_tasks=[
         {"task": "log dining expense", "worker": "transaction_classifier", "details": "..."},
-        {"task": "create savings plan", "worker": "budget_advisor", "details": "..."}
+        {"task": "create savings plan", "worker": "budget", "details": "..."}
     ]
 )
 ```

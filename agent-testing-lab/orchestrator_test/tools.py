@@ -83,7 +83,7 @@ def route_to_jar_manager(task_description: str) -> dict:
     """
     return {
         "action": "single_worker_routing", 
-        "worker": "jar_manager",
+        "worker": "jar",
         "task": task_description
     }
 
@@ -107,7 +107,7 @@ def route_to_budget_advisor(query: str) -> dict:
     """
     return {
         "action": "single_worker_routing",
-        "worker": "budget_advisor", 
+        "worker": "budget", 
         "task": query
     }
 
@@ -155,7 +155,7 @@ def route_to_fee_manager(task_description: str) -> dict:
     """
     return {
         "action": "single_worker_routing",
-        "worker": "fee_manager", 
+        "worker": "fee", 
         "task": task_description
     }
 
@@ -179,7 +179,7 @@ def route_to_knowledge_base(query: str) -> dict:
     """
     return {
         "action": "single_worker_routing",
-        "worker": "knowledge_base",
+        "worker": "knowledge",
         "task": query
     }
 
@@ -198,7 +198,7 @@ def route_to_multiple_workers(task_json: str) -> dict:
     
     Args:
         task_json: JSON string containing list of tasks
-                   Example: '[{"worker": "transaction_classifier", "task": "Log $100 grocery expense"}, {"worker": "jar_manager", "task": "Add vacation jar with 15%"}]'
+                   Example: '[{"worker": "classifier", "task": "Log $100 grocery expense"}, {"worker": "jar", "task": "Add vacation jar with 15%"}]'
     
     Returns:
         Multi-worker routing decision
@@ -227,7 +227,7 @@ def decompose_complex_request(user_request: str, tasks_json: str) -> dict:
     Args:
         user_request: The original user request
         tasks_json: JSON string of identified sub-tasks
-                   Example: '[{"task": "log transaction", "worker": "transaction_classifier", "details": "..."}, {"task": "create jar", "worker": "jar_manager", "details": "..."}]'
+                   Example: '[{"task": "log transaction", "worker": "classifier", "details": "..."}, {"task": "create jar", "worker": "jar", "details": "..."}]'
     
     Returns:
         Decomposition result

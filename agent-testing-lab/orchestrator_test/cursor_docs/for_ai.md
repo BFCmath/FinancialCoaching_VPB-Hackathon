@@ -126,7 +126,7 @@ Expected: route_to_jar_manager(task_description="...")
 Input: "I spent $100 on groceries and want to add a vacation jar with 15%"
 Expected: route_to_multiple_workers(tasks=[
     {"worker": "transaction_classifier", "task_description": "..."},
-    {"worker": "jar_manager", "task_description": "..."}
+    {"worker": "jar", "task_description": "..."}
 ])
 ```
 
