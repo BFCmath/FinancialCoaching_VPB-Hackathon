@@ -483,7 +483,7 @@ class BudgetAdvisorTester:
                 "question_ask_user": "Do you need any additional clarification?"
             })),
 
-            ("transaction_fetcher", lambda: transaction_fetcher.invoke({
+            ("fetcher", lambda: transaction_fetcher.invoke({
                 "user_query": "test spending",
                 "description": "Tool validation transaction query"
             })),
