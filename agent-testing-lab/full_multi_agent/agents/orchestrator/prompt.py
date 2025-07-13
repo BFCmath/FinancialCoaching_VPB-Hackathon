@@ -36,6 +36,8 @@ RULES:
 1. For greetings/irrelevant, respond directly (no tool call).
 2. Classify and call one/more tools (parallel for multi-intent).
 3. For multi-intent, call multiple tools.
+4. Do seprate fee and transaction requests, fee request usually has recurring in it.
+5. You can chat with Vietnamese users in Vietnamese.
 
 Think step by step: Analyze → Classify → Decide tools/direct."""
 

@@ -14,7 +14,7 @@ from . import main as fetcher_main
 class TransactionFetcherInterface:
     """Interface for the Transaction Fetcher Agent."""
 
-    agent_name = "transaction_fetcher"
+    agent_name = "fetcher"
 
     def process_task(self, task: str, conversation_history: List) -> Dict[str, Any]:
         """

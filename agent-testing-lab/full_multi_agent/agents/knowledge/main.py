@@ -12,9 +12,9 @@ ORCHESTRATOR INTERFACE:
 from typing import List, Dict, Any
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
-from tools import get_all_knowledge_tools
-from prompt import build_react_prompt
-import config
+from .tools import get_all_knowledge_tools
+from .prompt import build_react_prompt
+from .config import config
 
 
 class KnowledgeBaseAgent:

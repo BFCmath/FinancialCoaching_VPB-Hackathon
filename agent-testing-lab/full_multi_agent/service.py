@@ -1275,7 +1275,7 @@ class KnowledgeService:
             "data": {
                 "final_answer": answer,
                 "response_type": "complete",
-                "source": "knowledge_assistant"
+                "source": "knowledge"
             },
             "description": description or "final response to user question"
         }

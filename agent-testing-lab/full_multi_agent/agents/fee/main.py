@@ -1,9 +1,12 @@
+# agents/fee/main.py (unified with process_task as main export, removed manage_fees wrapper)
+
 """
 Fee Manager Agent - Main Logic
 ==============================
 
 Core fee management system, using tools directly.
 """
+
 import os
 import sys
 import traceback
@@ -65,7 +68,7 @@ class FeeManager:
                 existing_fees=existing_fees,
                 available_jars=available_jars,
                 conversation_history=conversation_history,
-                is_follow_up=get_active_agent_context() == 'fee_manager'
+                is_follow_up=get_active_agent_context() == 'fee'
             )
             
             # Get LLM's tool decision
@@ -107,7 +110,7 @@ class FeeManager:
                 traceback.print_exc()
             return f"Error: {str(e)}", tool_calls_made, False
 
-def manage_fees(task: str, conversation_history: Optional[List[ConversationTurn]] = None) -> Dict[str, Any]:
+def process_task(task: str, conversation_history: Optional[List[ConversationTurn]] = None) -> Dict[str, Any]:
     """
     Main orchestrator interface for the Fee Manager agent.
     
@@ -120,46 +123,23 @@ def manage_fees(task: str, conversation_history: Optional[List[ConversationTurn]
     """
     agent = FeeManager()
     
-    try:
-        # Process request and get tool result
-        result, tool_calls_made, requires_follow_up = agent.process_request(task, conversation_history)
+    # Process request and get tool result
+    result, tool_calls_made, requires_follow_up = agent.process_request(task, conversation_history)
 
-        # Log the interaction
-        add_conversation_turn(
-            user_input=task,
-            agent_output=result,
-            agent_list=['fee_manager'],
-            tool_call_list=tool_calls_made
-        )
+    # Log the interaction
+    add_conversation_turn(
+        user_input=task,
+        agent_output=result,
+        agent_list=['fee'],
+        tool_call_list=tool_calls_made
+    )
 
-        if config.verbose_logging:
-            print(f"📝 Logged conversation turn for fee_manager. Follow-up: {requires_follow_up}")
+    if config.verbose_logging:
+        print(f"📝 Logged conversation turn for fee_manager. Follow-up: {requires_follow_up}")
 
-        return {
-            "response": result,  # Direct tool result
-            "requires_follow_up": requires_follow_up,
-            "agent": "fee_manager",
-            "tool_calls": tool_calls_made,
-            "success": True
-        }
-
-    except Exception as e:
-        error_msg = f"Error: {str(e)}"
-        if config.debug_mode:
-            error_msg += f"\n{traceback.format_exc()}"
-            
-        # Log the error
-        add_conversation_turn(
-            user_input=task,
-            agent_output=error_msg,
-            agent_list=['fee_manager'],
-            tool_call_list=[]
-        )
-        
-        return {
-            "response": error_msg,
-            "requires_follow_up": False,
-            "agent": "fee_manager",
-            "tool_calls": [],
-            "success": False
-        }
+    return {
+        "response": result,  # Direct tool result
+        "requires_follow_up": requires_follow_up,
+        "tool_calls": tool_calls_made,
+        "success": "Error" not in result
+    }

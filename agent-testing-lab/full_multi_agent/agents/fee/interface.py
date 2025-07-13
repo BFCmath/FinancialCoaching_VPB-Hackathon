@@ -1,21 +1,16 @@
-"""
-Fee Manager Agent Interface
-===========================
+# agents/fee/interface.py (updated to inherit from BaseWorkerInterface and use process_task)
 
-A clean interface for the orchestrator to call the Fee Manager agent.
-"""
+from typing import Dict, Any, List, Optional
+from agents.base_worker import BaseWorkerInterface
+from .main import process_task  # Import the unified process_task from main.py
+from database import ConversationTurn
 
-from typing import Dict, Any, List
-from . import main as fee_main
-
-# --- Agent Interface Definition ---
-
-class FeeManagerInterface:
+class FeeManagerInterface(BaseWorkerInterface):
     """Interface for the Fee Manager Agent."""
 
-    agent_name = "fee_manager"
+    agent_name = "fee"
 
-    def process_task(self, task: str, conversation_history: List) -> Dict[str, Any]:
+    def process_task(self, task: str, conversation_history: List[ConversationTurn]) -> Dict[str, Any]:
         """
         Processes a recurring fee management task.
         
@@ -27,8 +22,13 @@ class FeeManagerInterface:
             A dictionary containing the response and a flag for follow-up.
             Example: {"response": "...", "requires_follow_up": False}
         """
-        return fee_main.manage_fees(task, conversation_history)
+        return process_task(task, conversation_history)
+
+    def get_capabilities(self) -> Optional[List[str]]:
+        return [
+            "Manage recurring fees/subscriptions (create, update, delete, list)"
+        ]
 
 def get_agent_interface() -> FeeManagerInterface:
     """Factory function to get an instance of the agent interface."""
-    return FeeManagerInterface() 
+    return FeeManagerInterface()

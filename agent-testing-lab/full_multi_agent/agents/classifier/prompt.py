@@ -18,8 +18,9 @@ parent_dir = os.path.dirname(os.path.dirname(current_dir))
 sys.path.append(parent_dir)
 
 from utils import get_all_jars
+from database import ConversationTurn
 
-def build_react_classifier_prompt(user_query: str, conversation_history: List = None) -> str:
+def build_react_classifier_prompt(user_query: str, conversation_history: List[ConversationTurn]) -> str:   
     """
     Builds the ReAct system prompt for the Transaction Classifier agent.
 
@@ -39,7 +40,7 @@ def build_react_classifier_prompt(user_query: str, conversation_history: List = 
     history_str = ""
     if conversation_history:
         history_lines = []
-        for turn in conversation_history[-3:]: # Get the last 3 turns
+        for turn in conversation_history: # Get the last 3 turns
             history_lines.append(f"User: {turn.user_input}")
             history_lines.append(f"Assistant: {turn.agent_output}")
         history_str = "\n".join(history_lines)

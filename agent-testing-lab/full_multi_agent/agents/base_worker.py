@@ -1,7 +1,7 @@
-# agents/base_worker.py
+# agents/base_worker.py (shared base class, place in agents/ directory or appropriate shared location)
 
-from typing import Dict, Any, List, Optional
 from abc import ABC, abstractmethod
+from typing import Dict, Any, List, Optional
 from database import ConversationTurn
 
 class BaseWorkerInterface(ABC):
@@ -12,7 +12,7 @@ class BaseWorkerInterface(ABC):
     This ensures consistent API for the orchestrator (polymorphism).
     """
     
-    agent_name: str  # Must be set in subclass
+    agent_name: str  # Must be set in subclass as class attribute
 
     @abstractmethod
     def process_task(self, task: str, conversation_history: List[ConversationTurn]) -> Dict[str, Any]:

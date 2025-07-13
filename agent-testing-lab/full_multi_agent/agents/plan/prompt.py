@@ -23,7 +23,7 @@ def build_budget_advisor_prompt(user_input: str, conversation_history: List[Conv
     """
     
     # Format conversation history (last 3 relevant turns)
-    relevant_history = [turn for turn in conversation_history[-3:] if 'budget_advisor' in turn.agent_list]
+    relevant_history = [turn for turn in conversation_history if 'plan' in turn.agent_list]
     history_lines = []
     for turn in relevant_history:
         history_lines.append(f"User: {turn.user_input}")
@@ -50,6 +50,8 @@ You are in the information gathering stage. Your goal is to fully understand the
 **TERMINATING TOOLS (To end your turn and respond to the user):**
 - `request_clarification(question, suggestion)`: Call this if you don't have know what is this saving for and how much they want to save each month.
 - `propose_plan(financial_plan, jar_changes)`: Call this if you have: context, money to save per month, go to the next stage.
+
+Remember to avoid direct answer, communicate through terminating tools only.
 """
 
     elif stage == "2":
@@ -70,7 +72,9 @@ You have presented a plan, and you are now in a refinement loop with the user. Y
 **TERMINATING TOOL (To end your turn and respond to the user):**
 - `propose_plan(financial_plan, jar_changes)`: Call this to present the original or a refined version of the plan. This is your only way to respond to the user in Stage 2.
 
-**YOUR TASK:** Analyze the user's feedback, if user is not satisfied with current plan, use propose_plan to propose a new one align with their feedback."""
+**YOUR TASK:** Analyze the user's feedback, if user is not satisfied with current plan, use propose_plan to propose a new one align with their feedback.
+Remember to avoid direct answer, communicate through terminating tools only.
+"""
     
     elif stage == "3":
         # In build_budget_advisor_prompt, when stage == "3":

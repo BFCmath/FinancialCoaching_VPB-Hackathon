@@ -13,7 +13,7 @@ from . import main as jar_main
 class JarManagerInterface:
     """Interface for the Jar Manager Agent."""
 
-    agent_name = "jar_manager"
+    agent_name = "jar"
 
     def process_task(self, task: str, conversation_history: List) -> Dict[str, Any]:
         """

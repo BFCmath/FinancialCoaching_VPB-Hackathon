@@ -1,15 +1,14 @@
 """
-Budget Advisor Agent Tools
-==========================
+Budget Advisor Agent Tools (OPTIMIZED)
+======================================
 
 Tools for the ReAct-based financial planning and advisory agent.
-These tools integrate with the unified service layer to manage budget plans,
-communicate with other agents, and access data directly.
+These tools integrate with the unified service layer and are optimized to
+return a standardized dictionary for the orchestrator.
 """
 
 import sys
 import os
-import json
 
 # Add the parent directories to path to import from service layer
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -22,12 +21,13 @@ from typing import Optional, Dict, Any, List
 # Import from our unified service layer and utils
 from service import get_plan_service, get_communication_service, get_jar_service
 from utils import get_jar as get_jar_from_db, get_all_jars
-from database import TOTAL_INCOME
+from database import TOTAL_INCOME, set_active_agent_context
 
 # Get service instances
 plan_service = get_plan_service()
 communication_service = get_communication_service()
 jar_service = get_jar_service()
+
 
 @tool
 def transaction_fetcher(user_query: str, description: str) -> Dict[str, Any]:
@@ -50,6 +50,7 @@ def transaction_fetcher(user_query: str, description: str) -> Dict[str, Any]:
         user_query=user_query,
         description=description
     )
+
 
 @tool
 def get_jar(jar_name: Optional[str] = None, description: str = "") -> Dict[str, Any]:
@@ -85,6 +86,7 @@ def get_jar(jar_name: Optional[str] = None, description: str = "") -> Dict[str, 
         "description": description or description_text
     }
 
+
 @tool
 def get_plan(status: str = "active", description: str = "") -> Dict[str, Any]:
     """
@@ -104,6 +106,7 @@ def get_plan(status: str = "active", description: str = "") -> Dict[str, Any]:
     """
     return plan_service.get_plan(status=status, description=description)
 
+
 @tool
 def create_plan(name: str, description: str, jar_changes: str, status: str = "active") -> Dict[str, Any]:
     """
@@ -114,18 +117,25 @@ def create_plan(name: str, description: str, jar_changes: str, status: str = "ac
         name: A unique, descriptive name for the plan. Example: "Japan Vacation Fund".
         description: A detailed description of the plan's purpose and goals.
         status: The initial status of the plan, usually "active".
-        jar_changes: A DETAILED, ACTIONABLE command for how the user's budget jars
-                     should be changed to support this plan. This must be in a format that can be directly sent to the Jar Manager (e.g., JSON with jar names, percentages, amounts, and rebalancing instructions).
+        jar_changes: A DETAILED, ACTIONABLE command for jar changes.
 
     Returns:
-        A dictionary containing the newly created plan data.
+        A standardized dictionary with a success message, the plan details, and state flags for the orchestrator.
     """
-    return plan_service.create_plan(
+    service_result = plan_service.create_plan(
         name=name,
         description=description,
         status=status,
-        jar_propose_adjust_details=jar_changes  # Renamed internally to match service, but detailed as command
+        jar_propose_adjust_details=jar_changes
     )
+    # The tool now creates the full response object for the orchestrator
+    return {
+        "response": f"✅ Your plan '{name}' has been created successfully!",
+        "plan_details": service_result,
+        "requires_follow_up": False,
+        "stage": "3"
+    }
+
 
 @tool
 def adjust_plan(name: str,  description: str, jar_changes: str, status: Optional[str] = None) -> Dict[str, Any]:
@@ -138,17 +148,25 @@ def adjust_plan(name: str,  description: str, jar_changes: str, status: Optional
         name: The name of the existing plan to modify.
         description: A new, updated description for the plan.
         status: A new status for the plan (e.g., "completed", "paused").
-        jar_changes: A DETAILED, ACTIONABLE command for jar adjustments. This must be in a format that can be directly sent to the Jar Manager (e.g., JSON with jar names, percentages, amounts, and rebalancing instructions).
+        jar_changes: A DETAILED, ACTIONABLE command for jar adjustments.
 
     Returns:
-        A dictionary containing the updated plan data.
+        A standardized dictionary with a success message, the plan details, and state flags for the orchestrator.
     """
-    return plan_service.adjust_plan(
+    service_result = plan_service.adjust_plan(
         name=name,
         description=description,
         status=status,
-        jar_propose_adjust_details=jar_changes  # Renamed internally, detailed as command
+        jar_propose_adjust_details=jar_changes
     )
+    # The tool now creates the full response object for the orchestrator
+    return {
+        "response": f"✅ Your plan '{name}' has been adjusted successfully!",
+        "plan_details": service_result,
+        "requires_follow_up": False,
+        "stage": "3"
+    }
+
 
 @tool
 def request_clarification(question: str, suggestion: Optional[str] = None) -> Dict[str, Any]:
@@ -165,12 +183,12 @@ def request_clarification(question: str, suggestion: Optional[str] = None) -> Di
         question: The specific question to ask the user to clarify their needs.
         suggestion: Optional suggestions to help the user respond, such as examples or formats.
     """
-    from database import set_active_agent_context
-    set_active_agent_context("budget_advisor")
+    set_active_agent_context("plan")
     response = f"❓ {question}"
     if suggestion:
         response += f"\n💡 {suggestion}"
-    return {"response": response, "requires_follow_up": True, "stage": "1"}  # Stay current
+    return {"response": response, "requires_follow_up": True, "stage": "1"}
+
 
 @tool
 def propose_plan(financial_plan: str, jar_changes: str) -> Dict[str, Any]:
@@ -182,9 +200,10 @@ def propose_plan(financial_plan: str, jar_changes: str) -> Dict[str, Any]:
         financial_plan: A detailed proposal for the plan, including financial goals and strategies.
         jar_changes: A detailed proposal for changes to jars aligned with financial_plan, such as new allocations or adjustments to existing jars.
     """
-    from database import set_active_agent_context
-    set_active_agent_context("budget_advisor")
+    set_active_agent_context("plan")
+    # This tool's output is handled specially in main.py to format the two parts
     return {"financial_plan": financial_plan, "jar_changes": jar_changes, "requires_follow_up": True, "stage": "2"}
+
 
 def get_stage1_tools() -> List[tool]:
     return [transaction_fetcher, get_jar, get_plan, request_clarification, propose_plan]
@@ -193,4 +212,4 @@ def get_stage2_tools() -> List[tool]:
     return [transaction_fetcher, get_jar, get_plan, propose_plan]
 
 def get_stage3_tools() -> List[tool]:
-    return [create_plan, adjust_plan]  # Removed apply_changes
+    return [create_plan, adjust_plan]

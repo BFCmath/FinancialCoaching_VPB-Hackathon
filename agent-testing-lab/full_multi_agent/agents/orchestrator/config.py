@@ -23,8 +23,9 @@ class Config:
     model_name: str = "gemini-2.5-flash-lite-preview-06-17"
     temperature: float = 0.1
     
+    debug_mode = os.getenv("DEBUG_MODE", "false").lower() == "true"
+    verbose_logging = os.getenv("VERBOSE_LOGGING", "false").lower() == "true"
     # Testing modes
-    debug_mode: bool = False
     
     def __post_init__(self):
         """Load from environment variables."""

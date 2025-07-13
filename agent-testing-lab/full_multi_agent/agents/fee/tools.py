@@ -50,7 +50,7 @@ def request_clarification(question: str, suggestions: Optional[str] = None) -> s
         Formatted clarification request
     """
     # Lock conversation to fee_manager - ONLY place where lock is set
-    set_active_agent_context("fee_manager")
+    set_active_agent_context("fee")
     
     response = f"{question}"
     # if suggestions:

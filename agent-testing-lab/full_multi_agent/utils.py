@@ -311,7 +311,7 @@ def get_agent_specific_history(agent_name: str, max_turns: int = 10) -> List[Con
     Retrieves the conversation history specifically for a given agent.
 
     Args:
-        agent_name: The name of the agent to filter history for (e.g., "budget_advisor").
+        agent_name: The name of the agent to filter history for (e.g., "budget").
         max_turns: The maximum number of turns to return.
 
     Returns:

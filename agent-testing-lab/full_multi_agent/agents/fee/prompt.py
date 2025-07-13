@@ -63,7 +63,7 @@ def build_fee_manager_prompt(
     if is_follow_up and conversation_history:
         # Get the last few relevant turns
         relevant_history = [turn for turn in conversation_history[-3:] 
-                          if 'fee_manager' in turn.agent_list]
+                          if 'fee' in turn.agent_list]
         if relevant_history:
             history_lines = []
             for turn in relevant_history:

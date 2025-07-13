@@ -99,7 +99,7 @@ def process_task(task: str, conversation_history: List) -> Dict[str, Any]:
         add_conversation_turn(
             user_input=task,
             agent_output=str(result),  # Convert dict to string for logging
-            agent_list=['transaction_fetcher'],
+            agent_list=['fetcher'],
             tool_call_list=tool_calls_made
         )
 

@@ -388,6 +388,22 @@ if not TRANSACTIONS_STORAGE:
     # Append to TRANSACTIONS_STORAGE
     TRANSACTIONS_STORAGE.extend(mock_transactions)
 
+CURRENT_PLAN_STAGE = "1" # Default stage
+
+def set_plan_stage(stage: str):
+    """Sets the current stage for the Plan agent."""
+    global CURRENT_PLAN_STAGE
+    CURRENT_PLAN_STAGE = str(stage)
+    print(f"✅ Plan agent stage set to: {stage}")
+
+def get_plan_stage() -> str:
+    """Gets the current stage for the Plan agent."""
+    global CURRENT_PLAN_STAGE
+    # Ensure it's never None, default to "1"
+    if CURRENT_PLAN_STAGE is None:
+        CURRENT_PLAN_STAGE = "1"
+    return CURRENT_PLAN_STAGE
+
 # =============================================================================
 # SCHEMA VALIDATION CONSTANTS (DO NOT USE IN DEV LAB)
 # =============================================================================

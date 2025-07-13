@@ -58,7 +58,7 @@ def process_task(task: str, conversation_history: List) -> Dict[str, Any]:
         existing_jars = get_all_jars()
         
         # Build prompt with context for follow-ups
-        is_follow_up = get_active_agent_context() == 'jar_manager'
+        is_follow_up = get_active_agent_context() == 'jar'
         prompt = build_jar_manager_prompt(
             user_input=task,
             existing_jars=existing_jars,
@@ -104,7 +104,7 @@ def process_task(task: str, conversation_history: List) -> Dict[str, Any]:
         add_conversation_turn(
             user_input=task,
             agent_output=result,
-            agent_list=['jar_manager'],
+            agent_list=['jar'],
             tool_call_list=tool_calls_made
         )
 

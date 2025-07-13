@@ -1445,3 +1445,46 @@
     "amount": 250.0
   }
 }
+{
+  "timestamp": "2025-07-13T00:14:35.619571",
+  "tool_name": "transaction_fetcher",
+  "arguments": {
+    "description": "Infer the currency and jar for '\u0103n c\u01a1m tr\u01b0a 20'",
+    "user_query": "past lunch expenses"
+  }
+}
+{
+  "timestamp": "2025-07-13T00:14:36.295376",
+  "tool_name": "add_money_to_jar_with_confidence",
+  "arguments": {
+    "jar_name": "necessities",
+    "confidence": 90.0,
+    "amount": 20.0
+  }
+}
+{
+  "timestamp": "2025-07-13T00:46:11.338964",
+  "tool_name": "transaction_fetcher",
+  "arguments": {
+    "description": "Need to determine the typical daily commute cost to classify the user's expense.",
+    "user_query": "What were my daily commute expenses last week?"
+  }
+}
+{
+  "timestamp": "2025-07-13T00:46:11.978025",
+  "tool_name": "add_money_to_jar_with_confidence",
+  "arguments": {
+    "jar_name": "necessities",
+    "confidence": 90.0,
+    "amount": 20.0
+  }
+}
+{
+  "timestamp": "2025-07-13T00:55:29.946697",
+  "tool_name": "add_money_to_jar_with_confidence",
+  "arguments": {
+    "jar_name": "necessities",
+    "confidence": 90.0,
+    "amount": 20000.0
+  }
+}

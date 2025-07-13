@@ -145,13 +145,16 @@ def request_clarification(question: str, suggestions: Optional[str] = None) -> s
     """
     Ask user for clarification when input is unclear.
     Engages a conversation lock to ensure the user's next response is routed back to this agent.
+    Stop asking when you have:
+    + purpose/name of the jar(s)
+    + percentage or amount (not both)
     
     Args:
         question: Question to ask for clarification
         suggestions: Optional suggestions to help user
     """
     from database import set_active_agent_context
-    set_active_agent_context("jar_manager") # Lock conversation to this agent
+    set_active_agent_context("jar") # Lock conversation to this agent
 
     # The main loop will interpret this return and format it for the user
     # It will also know to set requires_follow_up to True
