@@ -1,29 +1,32 @@
 """
-Agent Communication Service
-===========================
+Agent Communication Service - Complete Implementation from Lab
+=============================================================
 
-Dedicated service for cross-agent communication and coordination,
-extracted from additional_services.py for better separation of concerns.
+This module implements the cross-agent communication service from the lab,
+including all functions: call_transaction_fetcher, call_jar_agent,
+format_cross_agent_request, handle_cross_agent_response, coordinate_multi_agent_task.
+Integrated with database for user context.
+All methods async where appropriate.
 """
 
-from typing import Dict, List, Optional, Tuple, Any, Union
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-# Import other services for cross-agent calls
+from backend.utils import db_utils
 from .transaction_service import TransactionQueryService
 from .jar_service import JarManagementService
 
 class AgentCommunicationService:
     """
-    Service for managing communication between different agents in the system.
+    Service for managing communication between different agents.
     """
     
     @staticmethod
     async def call_transaction_fetcher(db: AsyncIOMotorDatabase, user_id: str, 
-                                     user_query: str, description: str = "") -> Dict[str, Any]:
+                                       user_query: str, description: str = "") -> Dict[str, Any]:
         """
-        Simulate calling the transaction fetcher agent.
+        Call transaction fetcher service.
         
         Args:
             db: Database connection
@@ -35,25 +38,20 @@ class AgentCommunicationService:
             Formatted response from transaction fetcher
         """
         try:
-            # Use TransactionQueryService to handle the request
             query_service = TransactionQueryService()
-            
-            # Parse query for transaction fetching intent
-            if "recent" in user_query.lower():
-                result = await query_service.get_jar_transactions(db, user_id, limit=10)
-            elif "spending" in user_query.lower():
-                result = await query_service.get_time_period_transactions(
-                    db, user_id, start_date="last_month"
-                )
-            else:
-                result = await query_service.get_jar_transactions(db, user_id, limit=20)
+            # Assuming get_complex_transaction can handle the query
+            result = await query_service.get_complex_transaction(
+                db=db,
+                user_id=user_id,
+                description=user_query  # Pass query as description or parse accordingly
+            )
             
             return {
                 "agent": "transaction_fetcher",
-                "status": "success", 
-                "data": result,
+                "status": "success",
+                "data": result["data"],
                 "query": user_query,
-                "description": description,
+                "description": description or result["description"],
                 "timestamp": datetime.utcnow().isoformat()
             }
             
@@ -68,9 +66,9 @@ class AgentCommunicationService:
     
     @staticmethod
     async def call_jar_agent(db: AsyncIOMotorDatabase, user_id: str,
-                           jar_name: str = None, description: str = "") -> Dict[str, Any]:
+                             jar_name: Optional[str] = None, description: str = "") -> Dict[str, Any]:
         """
-        Simulate calling the jar management agent.
+        Call jar management service.
         
         Args:
             db: Database connection
@@ -85,28 +83,34 @@ class AgentCommunicationService:
             jar_service = JarManagementService()
             
             if jar_name:
-                # Get specific jar information
-                jar = await db.jars.find_one({"user_id": user_id, "name": jar_name})
-                if jar:
-                    result = f"📊 Jar '{jar_name}': {jar.get('percent', 0)*100:.1f}% allocation, ${jar.get('current_amount', 0):.2f} current"
-                else:
-                    result = f"❌ Jar '{jar_name}' not found"
+                jar = await db_utils.get_jar_by_name(db, user_id, jar_name.lower().replace(' ', '_'))
+                if not jar:
+                    return {
+                        "agent": "jar_manager",
+                        "status": "error",
+                        "error": f"Jar '{jar_name}' not found",
+                        "jar_name": jar_name,
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                result = jar.dict()
+                desc = f"Information for jar '{jar_name}'"
             else:
-                # List all jars
-                result = await jar_service.list_jars(db, user_id)
+                jars = await jar_service.list_jars(db, user_id)
+                result = [j.dict() for j in jars]  # Assuming list_jars returns list of JarInDB
+                desc = "All jars information"
             
             return {
                 "agent": "jar_manager",
                 "status": "success",
                 "data": result,
                 "jar_name": jar_name,
-                "description": description,
+                "description": description or desc,
                 "timestamp": datetime.utcnow().isoformat()
             }
             
         except Exception as e:
             return {
-                "agent": "jar_manager", 
+                "agent": "jar_manager",
                 "status": "error",
                 "error": str(e),
                 "jar_name": jar_name,
@@ -153,7 +157,6 @@ class AgentCommunicationService:
             "success": response.get("status") == "success"
         }
         
-        # Extract key data based on response structure
         if "data" in response:
             processed["extracted_data"] = response["data"]
         
@@ -165,7 +168,7 @@ class AgentCommunicationService:
     
     @staticmethod
     async def coordinate_multi_agent_task(db: AsyncIOMotorDatabase, user_id: str,
-                                        task_description: str, required_agents: List[str]) -> Dict[str, Any]:
+                                          task_description: str, required_agents: List[str]) -> Dict[str, Any]:
         """
         Coordinate a task that requires multiple agents.
         
@@ -179,17 +182,15 @@ class AgentCommunicationService:
             Coordination result
         """
         results = {}
-        communication_service = AgentCommunicationService()
         
         try:
-            # Call each required agent
             for agent in required_agents:
                 if agent == "transaction_fetcher":
-                    result = await communication_service.call_transaction_fetcher(
+                    result = await AgentCommunicationService.call_transaction_fetcher(
                         db, user_id, task_description
                     )
                 elif agent == "jar_manager":
-                    result = await communication_service.call_jar_agent(
+                    result = await AgentCommunicationService.call_jar_agent(
                         db, user_id, description=task_description
                     )
                 else:
@@ -197,7 +198,6 @@ class AgentCommunicationService:
                 
                 results[agent] = result
             
-            # Analyze overall success
             success_count = sum(1 for r in results.values() if r.get("status") == "success")
             overall_success = success_count == len(required_agents)
             

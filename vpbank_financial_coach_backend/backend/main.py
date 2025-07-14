@@ -25,11 +25,11 @@ app.add_middleware(
 
 # --- Database Connection Events ---
 # These events will run when the application starts and shuts down.
-@app.lifespan("startup")
+@app.on_event("startup")
 async def startup_db_client():
     await connect_to_mongo()
 
-@app.lifespan("shutdown")
+@app.on_event("shutdown") 
 async def shutdown_db_client():
     await close_mongo_connection()
 

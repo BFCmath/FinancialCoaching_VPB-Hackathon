@@ -10,8 +10,8 @@ They are designed to be used as dependencies in FastAPI endpoints.
 from typing import Dict, List, Optional, Any, Tuple
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
-import pytz
 from datetime import datetime, timedelta
+from pymongo import ReturnDocument
 
 # Import all Pydantic models
 from backend.models import user, jar, transaction, fee, plan, conversation, user_settings
@@ -85,7 +85,7 @@ async def create_or_update_user_settings(db: AsyncIOMotorDatabase, user_id: str,
         {"user_id": user_id},
         {"$set": update_data},
         upsert=True, # Creates the document if it doesn't exist
-        return_document=True # Returns the new, updated document
+        return_document=ReturnDocument.AFTER # Returns the new, updated document
     )
     return user_settings.UserSettingsInDB(**result)
 
@@ -100,7 +100,8 @@ async def set_agent_lock_for_user(db: AsyncIOMotorDatabase, user_id: str, agent_
         # Set a lock with a Time-To-Live (TTL) index for automatic expiration
         # Note: You must create a TTL index on the 'expireAt' field in MongoDB for this to work.
         # db.agent_locks.createIndex({ "expireAt": 1 }, { expireAfterSeconds: 0 })
-        expire_at = datetime.utcnow().replace(tzinfo=pytz.UTC) + timedelta(minutes=5) # Lock expires in 5 mins
+        from datetime import timezone
+        expire_at = datetime.utcnow().replace(tzinfo=timezone.utc) + timedelta(minutes=5) # Lock expires in 5 mins
         await db[AGENT_LOCK_COLLECTION].update_one(
             {"user_id": user_id},
             {"$set": {"agent_name": agent_name, "expireAt": expire_at}},
@@ -169,7 +170,7 @@ async def update_jar_in_db(db: AsyncIOMotorDatabase, user_id: str, original_jar_
     result = await db[JARS_COLLECTION].find_one_and_update(
         {"user_id": user_id, "name": original_jar_name},
         {"$set": update_data},
-        return_document=True
+        return_document=ReturnDocument.AFTER
     )
     if result:
         return jar.JarInDB(**result)
@@ -191,7 +192,7 @@ async def get_all_transactions_for_user(db: AsyncIOMotorDatabase, user_id: str) 
 
 async def get_transactions_by_jar_for_user(db: AsyncIOMotorDatabase, user_id: str, jar_name: str) -> List[transaction.TransactionInDB]:
     """Retrieves transactions for a specific jar and user."""
-    transactions_cursor = db[TRANSACTIONS_COLLECTION].find({"user_id": user_id, "jar_name": jar_name})
+    transactions_cursor = db[TRANSACTIONS_COLLECTION].find({"user_id": user_id, "jar": jar_name})
     return [transaction.TransactionInDB(**t) async for t in transactions_cursor]
 
 async def create_transaction_in_db(db: AsyncIOMotorDatabase, user_id: str, transaction_data: transaction.TransactionInDB) -> transaction.TransactionInDB:
@@ -211,7 +212,7 @@ async def get_transactions_by_date_range_for_user(db: AsyncIOMotorDatabase, user
     
     transactions_cursor = db[TRANSACTIONS_COLLECTION].find({
         "user_id": user_id,
-        "transaction_date": {"$gte": start_date, "$lte": end_date}
+        "date": {"$gte": start_date, "$lte": end_date}
     })
     return [transaction.TransactionInDB(**t) async for t in transactions_cursor]
 
@@ -241,7 +242,7 @@ async def update_fee_in_db(db: AsyncIOMotorDatabase, user_id: str, fee_name: str
     result = await db[FEES_COLLECTION].find_one_and_update(
         {"user_id": user_id, "name": fee_name},
         {"$set": update_data},
-        return_document=True
+        return_document=ReturnDocument.AFTER
     )
     if result:
         return fee.RecurringFeeInDB(**result)
@@ -283,7 +284,7 @@ async def update_plan_in_db(db: AsyncIOMotorDatabase, user_id: str, plan_name: s
     result = await db[PLANS_COLLECTION].find_one_and_update(
         {"user_id": user_id, "name": plan_name},
         {"$set": update_data},
-        return_document=True
+        return_document=ReturnDocument.AFTER
     )
     if result:
         return plan.BudgetPlanInDB(**result)
@@ -333,6 +334,20 @@ async def get_fees_due_today(db: AsyncIOMotorDatabase, user_id: str) -> List[fee
         "next_occurrence": {"$lte": today}
     })
     return [fee.RecurringFeeInDB(**f) async for f in fees_cursor]
+
+async def get_transactions_by_amount_range_for_user(db: AsyncIOMotorDatabase, user_id: str, min_amount: float = None, max_amount: float = None) -> List[transaction.TransactionInDB]:
+    """Get transactions within amount range"""
+    query = {"user_id": user_id}
+    if min_amount is not None or max_amount is not None:
+        amount_filter = {}
+        if min_amount is not None:
+            amount_filter["$gte"] = min_amount
+        if max_amount is not None:
+            amount_filter["$lte"] = max_amount
+        query["amount"] = amount_filter
+    
+    transactions_cursor = db[TRANSACTIONS_COLLECTION].find(query)
+    return [transaction.TransactionInDB(**t) async for t in transactions_cursor]
 
 # =============================================================================
 # CALCULATION UTILITIES (from lab utils.py)

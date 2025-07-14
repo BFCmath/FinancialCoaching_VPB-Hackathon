@@ -1,33 +1,48 @@
 """
-Budget Advisor Agent Prompts
-============================
+Budget Advisor Agent Prompts - Enhanced Pattern 2
+===============================================
 
 Clean, focused prompts for LLM-powered financial advisory services.
+Compatible with Enhanced Pattern 2 architecture.
 """
 
-from typing import List
-from database import ConversationTurn
+from typing import List, Optional
+from backend.models.conversation import ConversationTurnInDB
 
-def build_budget_advisor_prompt(user_input: str, conversation_history: List[ConversationTurn], is_follow_up: bool, stage: str) -> str:
+def build_budget_advisor_prompt(user_input: str, conversation_history: List[ConversationTurnInDB], 
+                               is_follow_up: bool, stage: str) -> str:
     """
     Build focused prompt for Budget Advisor agent using ReAct framework and stages.
     
     Args:
         user_input: User's financial question or request
-        conversation_history: List of recent conversation turns.
-        is_follow_up: Whether this is a follow-up response to a clarification.
-        stage: Current stage ("1", "2", "3").
+        conversation_history: List of recent conversation turns (Enhanced Pattern 2 format)
+        is_follow_up: Whether this is a follow-up response to a clarification
+        stage: Current stage ("1", "2", "3")
         
     Returns:
         Complete prompt for financial advisory with ReAct instructions
     """
     
     # Format conversation history (last 3 relevant turns)
-    relevant_history = [turn for turn in conversation_history if 'plan' in turn.agent_list]
+    # Enhanced Pattern 2: Handle ConversationTurnInDB objects
+    relevant_history = []
+    for turn in conversation_history:
+        # Check if this turn involves the plan agent
+        if hasattr(turn, 'agent_list') and 'plan' in (turn.agent_list or []):
+            relevant_history.append(turn)
+        elif hasattr(turn, 'agent_name') and turn.agent_name == 'plan':
+            relevant_history.append(turn)
+    
     history_lines = []
-    for turn in relevant_history:
-        history_lines.append(f"User: {turn.user_input}")
-        history_lines.append(f"Assistant: {turn.agent_output}")
+    for turn in relevant_history[-3:]:  # Last 3 turns
+        user_input_text = turn.user_input if hasattr(turn, 'user_input') else str(turn)
+        agent_output_text = turn.agent_output if hasattr(turn, 'agent_output') else ""
+        
+        history_lines.append(f"User: {user_input_text}")
+        if agent_output_text:
+            history_lines.append(f"Assistant: {agent_output_text}")
+    
     history_info = "\nPREVIOUS CONVERSATION:\n" + "\n".join(history_lines) if relevant_history else "\nNo previous conversation."
     if is_follow_up:
         history_info += "\n(This is a follow-up—use the user's response to your previous question.)"

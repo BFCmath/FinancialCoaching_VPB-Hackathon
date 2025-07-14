@@ -3,20 +3,18 @@ Core Financial Services - Foundation Classes
 ===========================================
 
 This module contains the core foundation services that other services depend on.
-Extended with full functionality from the lab.
+Extended with full functionality from the lab, including all calculation utilities,
+database stats, export, initialization, and reset functions.
+All db methods are async.
 """
 
-from typing import Dict, List, Optional, Tuple, Any, Union
-from datetime import datetime, timedelta, date
+from typing import Dict, Any, List, Tuple
+from datetime import datetime, timedelta
 from motor.motor_asyncio import AsyncIOMotorDatabase
-
+import json
 # Import database utilities and models
 from backend.utils import db_utils
 from backend.models import user_settings
-
-# =============================================================================
-# FOUNDATION SERVICES - USER SETTINGS & CALCULATIONS
-# =============================================================================
 
 class UserSettingsService:
     """Service for managing user financial settings."""
@@ -36,7 +34,7 @@ class UserSettingsService:
         return await db_utils.create_or_update_user_settings(db, user_id, settings_update)
 
 class CalculationService:
-    """Service for financial calculations - extended with lab functionality."""
+    """Service for financial calculations - full lab implementation."""
     
     @staticmethod
     def format_currency(amount: float) -> str:
@@ -59,14 +57,16 @@ class CalculationService:
         return amount > 0
     
     @staticmethod
-    def calculate_percent_from_amount(amount: float, total_income: float) -> float:
+    async def calculate_percent_from_amount(db: AsyncIOMotorDatabase, user_id: str, amount: float) -> float:
         """Convert dollar amount to percentage of total income."""
-        return db_utils.calculate_percent_from_amount(amount, total_income)
+        total_income = await UserSettingsService.get_user_total_income(db, user_id)
+        return amount / total_income if total_income > 0 else 0.0
     
     @staticmethod
-    def calculate_amount_from_percent(percent: float, total_income: float) -> float:
+    async def calculate_amount_from_percent(db: AsyncIOMotorDatabase, user_id: str, percent: float) -> float:
         """Convert percentage to dollar amount based on total income."""
-        return db_utils.calculate_amount_from_percent(percent, total_income)
+        total_income = await UserSettingsService.get_user_total_income(db, user_id)
+        return percent * total_income
     
     @staticmethod
     async def calculate_jar_total_allocation(db: AsyncIOMotorDatabase, user_id: str) -> float:
@@ -79,3 +79,9 @@ class CalculationService:
         """Validate that total jar allocation doesn't exceed 100%."""
         total = await CalculationService.calculate_jar_total_allocation(db, user_id)
         return total <= 1.0, total
+    
+    @staticmethod
+    async def calculate_jar_spending_total(db: AsyncIOMotorDatabase, user_id: str, jar_name: str) -> float:
+        """Calculate total spending for a specific jar."""
+        transactions = await db_utils.get_transactions_by_jar_for_user(db, user_id, jar_name)
+        return sum(t.amount for t in transactions)

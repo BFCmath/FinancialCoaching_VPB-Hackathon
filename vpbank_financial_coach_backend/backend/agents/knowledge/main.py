@@ -1,49 +1,71 @@
 """
-Knowledge Base Agent - ReAct Framework
-=====================================
+Knowledge Base Agent - Enhanced Pattern 2
+========================================
 
 Main agent that handles financial knowledge and app documentation questions
-using a ReAct (Reason-Act) framework with proper LangChain tool calling.
+using a ReAct (Reason-Act) framework with Enhanced Pattern 2 for production-ready multi-user support.
 
 ORCHESTRATOR INTERFACE:
-- get_knowledge(user_query: str) -> str
+- process_task(task: str, db: AsyncIOMotorDatabase, user_id: str) -> str
 """
 
+import traceback
 from typing import List, Dict, Any
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
-from .tools import get_all_knowledge_tools
+from motor.motor_asyncio import AsyncIOMotorDatabase
+
+from .tools import get_all_knowledge_tools, KnowledgeServiceContainer
 from .prompt import build_react_prompt
 from .config import config
 
 
 class KnowledgeBaseAgent:
-    """Knowledge Base Agent using ReAct framework with proper LangChain tool calling"""
+    """Knowledge Base Agent using ReAct framework with Enhanced Pattern 2"""
     
-    def __init__(self):
-        """Initialize the agent with LLM and tools"""
+    def __init__(self, db: AsyncIOMotorDatabase, user_id: str):
+        """
+        Initialize the agent with database context and user ID.
+        
+        Args:
+            db: Database connection for user data
+            user_id: User identifier for data isolation
+        """
+        # Validate required parameters
+        if not db:
+            raise ValueError("Database connection is required for production knowledge agent")
+        if not user_id:
+            raise ValueError("User ID is required for production knowledge agent")
+            
+        self.db = db
+        self.user_id = user_id
+        
+        # Initialize LLM
         self.llm = ChatGoogleGenerativeAI(
             model=config.model_name,
             google_api_key=config.google_api_key,
             temperature=config.llm_temperature
         )
         
-        # Bind all tools to LLM for intelligent selection
-        self.tools = get_all_knowledge_tools()
+        # Create service container with user context
+        self.services = KnowledgeServiceContainer(db, user_id)
+        
+        # Bind tools to LLM for intelligent selection
+        self.tools = get_all_knowledge_tools(self.services)
         self.llm_with_tools = self.llm.bind_tools(self.tools)
         
         # Track conversation for ReAct
         self.conversation_history = []
     
-    def get_knowledge(self, user_query: str) -> str:
+    def process_task(self, task: str) -> str:
         """
         MAIN ORCHESTRATOR INTERFACE
         
-        Get knowledge using proper ReAct framework.
+        Process knowledge request using ReAct framework.
         This is the primary function that the orchestrator should call.
         
         Args:
-            user_query: User's question about financial concepts or app features
+            task: User's question about financial concepts or app features
                 Examples:
                 - "What is compound interest?"
                 - "How does the jar system work?"
@@ -54,10 +76,10 @@ class KnowledgeBaseAgent:
             Final formatted answer from ReAct reasoning process
             
         Examples:
-            get_knowledge("What is compound interest?")
+            process_task("What is compound interest?")
             → "Compound interest is the interest calculated on..."
             
-            get_knowledge("How does the jar system work?")
+            process_task("How does the jar system work?")
             → "The jar system helps you organize your budget..."
         """
         
@@ -68,11 +90,11 @@ class KnowledgeBaseAgent:
             # Initialize conversation
             messages = [
                 SystemMessage(content=system_prompt),
-                HumanMessage(content=user_query)
+                HumanMessage(content=task)
             ]
             
             if config.debug_mode:
-                print(f"🔍 Processing query: {user_query}")
+                print(f"🔍 Processing query: {task}")
                 print(f"🧠 System prompt length: {len(system_prompt)} chars")
             
             # ReAct Loop: Continue until respond() is called
@@ -182,77 +204,57 @@ class KnowledgeBaseAgent:
             return error_msg
 
 
-def get_knowledge(user_query: str) -> str:
+def process_task(task: str, db: AsyncIOMotorDatabase, user_id: str) -> str:
     """
     MAIN ORCHESTRATOR INTERFACE
     
-    Standalone function to get knowledge using ReAct framework.
+    Standalone function to process knowledge requests using Enhanced Pattern 2.
     This is the primary function that the orchestrator should call.
     
     Args:
-        user_query: User's question about financial concepts or app features
+        task: User's question about financial concepts or app features
+        db: Database connection for user data
+        user_id: User identifier for data isolation
         
     Returns:
         Knowledge response from ReAct reasoning process
         
     Examples:
-        get_knowledge("What is compound interest?")
+        process_task("What is compound interest?", db, "user123")
         → "Compound interest is the interest calculated on..."
         
-        get_knowledge("How does the jar system work?")
+        process_task("How does the jar system work?", db, "user123")
         → "The jar system helps you organize your budget by..."
     """
-    agent = KnowledgeBaseAgent()
-    return agent.get_knowledge(user_query)
+    agent = KnowledgeBaseAgent(db, user_id)
+    return agent.process_task(task)
 
 
-def get_knowledge_response(user_query: str) -> str:
+# Legacy function names for backward compatibility
+def get_knowledge(user_query: str, db: AsyncIOMotorDatabase = None, user_id: str = None) -> str:
     """
     Legacy function name for backward compatibility.
-    Use get_knowledge() for new integrations.
+    Use process_task() for new integrations.
     """
-    return get_knowledge(user_query)
+    if not db or not user_id:
+        raise ValueError("Enhanced Pattern 2 requires db and user_id parameters")
+    return process_task(user_query, db, user_id)
 
 
-def quick_knowledge_test():
-    """Quick test of knowledge agent functionality"""
-    
-    test_queries = [
-        "What is compound interest?",
-        "How does the jar system work?", 
-        "What budgeting features does the app have?",
-        "Tell me about subscription tracking"
-    ]
-    
-    print("🧪 Testing Knowledge Agent with Service Integration")
-    print("=" * 60)
-    
-    for query in test_queries:
-        print(f"\n📝 Query: '{query}'")
-        try:
-            result = get_knowledge(query)
-            print(f"🎯 Result: {result[:200]}...")
-        except Exception as e:
-            print(f"❌ Error: {str(e)}")
-        print("-" * 60)
+def get_knowledge_response(user_query: str, db: AsyncIOMotorDatabase = None, user_id: str = None) -> str:
+    """
+    Legacy function name for backward compatibility.
+    Use process_task() for new integrations.
+    """
+    return get_knowledge(user_query, db, user_id)
+
 
 
 # ============================================================================
 # ORCHESTRATOR INTEGRATION INTERFACE  
 # ============================================================================
 
-def process_task(task: str) -> str:
-    """
-    Simple interface for orchestrator to call this agent.
-    
-    Args:
-        task: User's knowledge request task
-        
-    Returns:
-        Knowledge response
-    """
-    return get_knowledge(task)
+# For orchestrator: Use process_task(task, db, user_id) as primary interface
 
 
-if __name__ == "__main__":
-    quick_knowledge_test()
+

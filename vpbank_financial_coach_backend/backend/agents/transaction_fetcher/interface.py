@@ -1,37 +1,39 @@
-"""
-Transaction Fetcher Agent Interface
-===================================
+from typing import Dict, Any, List, Optional
+from motor.motor_asyncio import AsyncIOMotorDatabase
+from backend.agents.base_worker import BaseWorkerInterface
+from backend.models.conversation import ConversationTurnInDB
+from .main import process_task
 
-Clean interface for the orchestrator or other agents to call the transaction fetcher.
-This is a stateless data retrieval service.
-"""
-
-from typing import Dict, Any, List
-from . import main as fetcher_main
-
-# --- Agent Interface Definition ---
-
-class TransactionFetcherInterface:
-    """Interface for the Transaction Fetcher Agent."""
+class TransactionFetcherInterface(BaseWorkerInterface):
+    """Interface for the Transaction Fetcher Agent with backend database integration."""
 
     agent_name = "fetcher"
 
-    def process_task(self, task: str, conversation_history: List) -> Dict[str, Any]:
+    async def process_task(self, task: str, db: AsyncIOMotorDatabase, user_id: str, 
+                         conversation_history: Optional[List[ConversationTurnInDB]] = None) -> Dict[str, Any]:
         """
-        Processes a transaction retrieval task.
+        Processes a transaction retrieval task with backend database context.
         
         Args:
             task: The user's retrieval request.
-            conversation_history: The history of the conversation (unused, for compatibility).
+            db: Database instance for backend integration.
+            user_id: User identifier for database context.
+            conversation_history: Unused by this stateless agent, kept for compatibility.
 
         Returns:
-            A dictionary containing the response (transaction data) and a flag for follow-up (always False).
-            Example: {"response": {"data": [...], "description": "..."}, "requires_follow_up": False}
+            A dictionary containing the response (transaction data) and metadata.
         """
-        # Delegate the call directly to the agent's main processing logic
-        return fetcher_main.process_task(task, conversation_history)
+        # Delegate the call directly to the agent's main async processing logic
+        return await process_task(task, db, user_id, conversation_history)
+
+    def get_capabilities(self) -> Optional[List[str]]:
+        """Returns list of agent capabilities."""
+        return [
+            "Retrieve transaction history with complex filters",
+            "Filter transactions by jar, date, amount, time, or source",
+            "Handle multilingual (Vietnamese) transaction queries"
+        ]
 
 def get_agent_interface() -> TransactionFetcherInterface:
     """Factory function to get an instance of the agent interface."""
     return TransactionFetcherInterface()
-

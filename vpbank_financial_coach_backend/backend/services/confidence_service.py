@@ -1,12 +1,15 @@
 """
-Confidence Service
-=================
+Confidence Service - Complete Implementation from Lab
+=====================================================
 
-Dedicated service for confidence handling and user interaction validation,
-extracted from additional_services.py for better separation of concerns.
+This module implements the confidence handling service from the lab,
+including all functions from utils.py and service.py related to confidence:
+- format_confidence_response, request_clarification, determine_confidence_level
+- should_ask_for_confirmation, generate_confidence_explanation, validate_user_intent, suggest_alternatives
+No db operations, so all sync.
 """
 
-from typing import Dict, List, Optional, Tuple, Any, Union
+from typing import Tuple, List, Dict, Any, Optional
 
 class ConfidenceService:
     """
@@ -115,10 +118,7 @@ class ConfidenceService:
         explanation = base_explanations.get(level, "Confidence level unclear.")
         
         if factors:
-            factor_details = []
-            for factor, value in factors.items():
-                factor_details.append(f"{factor}: {value}")
-            
+            factor_details = [f"{factor}: {value}" for factor, value in factors.items()]
             if factor_details:
                 explanation += f" Contributing factors: {', '.join(factor_details)}"
         
@@ -166,5 +166,4 @@ class ConfidenceService:
         Returns:
             Formatted suggestion message
         """
-        return (f"❓ I didn't understand '{failed_input}'. "
-                f"Did you mean one of these? {', '.join(available_options)}")
+        return f"❓ I didn't understand '{failed_input}'. Did you mean one of these? {', '.join(available_options)}"

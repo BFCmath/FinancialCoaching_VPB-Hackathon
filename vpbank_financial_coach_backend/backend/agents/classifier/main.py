@@ -17,10 +17,9 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, Tool
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from .config import config
-from .tools import get_all_classifier_tools
+from .tools import get_all_classifier_tools, ClassifierServiceContainer
 from .prompt import build_react_classifier_prompt
 from backend.models.conversation import ConversationTurnInDB
-from backend.services.financial_services import configure_classifier_services
 
 # Define final action tools that end the loop
 FINAL_ACTION_TOOLS = [
@@ -41,12 +40,17 @@ class ReActClassifierAgent:
             google_api_key=config.google_api_key,
             temperature=config.temperature
         )
-        self.tools = get_all_classifier_tools()
-        self.llm_with_tools = self.llm.bind_tools(self.tools)
         
-        # Configure services if database context is provided
+        # Create service container for dependency injection
         if db and user_id:
-            configure_classifier_services(db, user_id)
+            self.services = ClassifierServiceContainer(db, user_id)
+            self.tools = get_all_classifier_tools(self.services)
+        else:
+            # Fallback for cases without database context (testing/development)
+            self.services = None
+            self.tools = []  # Empty tools list for non-production use
+            
+        self.llm_with_tools = self.llm.bind_tools(self.tools)
 
     def _find_tool(self, tool_name: str):
         """Finds a tool function by its name."""
@@ -66,6 +70,14 @@ class ReActClassifierAgent:
         Returns:
             A tuple containing the final response, tool calls, and a follow-up flag.
         """
+        # Validate that agent is properly configured for production use
+        if not self.services or not self.db or not self.user_id:
+            return (
+                "❌ Error: Classifier agent not properly configured. Database and user context required.",
+                [],
+                False
+            )
+        
         tool_calls_made = []
         requires_follow_up = False
         final_response = "Error: Agent loop completed without a final answer."
@@ -171,12 +183,19 @@ async def process_task_async(task: str, conversation_history: List[ConversationT
     Args:
         task: The user's current request (e.g., "lunch" or "coffee 2 dollars").
         conversation_history: List of previous turns for follow-up context.
-        db: Database connection (optional for compatibility).
-        user_id: User ID (optional for compatibility).
+        db: Database connection (required for production use).
+        user_id: User ID (required for production use).
 
     Returns:
         Dict with response and requires_follow_up flag.
     """
+    # Validate required parameters for production use
+    if not db or not user_id:
+        return {
+            "response": "❌ Error: Database connection and user_id are required for classifier agent.",
+            "requires_follow_up": False
+        }
+    
     agent = ReActClassifierAgent(db, user_id)
     
     # Process the request

@@ -6,26 +6,38 @@ Simplified prompts for LangChain tool binding with intelligent tool selection.
 This is a DATA RETRIEVAL service - return raw transaction data, no analysis.
 """
 
-from typing import List, Dict, Any
+from typing import List
+from motor.motor_asyncio import AsyncIOMotorDatabase
+from backend.utils.db_utils import get_all_jars_for_user
 
-def build_history_fetcher_prompt(user_query: str, available_jars: list) -> str:
+async def build_history_fetcher_prompt(
+    user_query: str,
+    db: AsyncIOMotorDatabase,
+    user_id: str
+) -> str:
     """
     Build prompt for pure data retrieval with intelligent tool selection.
     
     Args:
         user_query: User's question or request
-        available_jars: List of available budget jars
+        db: Database connection for fetching context
+        user_id: User ID for database queries
         
     Returns:
         Prompt focused on data retrieval with smart tool selection
     """
     
-    # Format jar information
-    jar_info = "\n".join([
-        f"• {jar['name']}: ${jar['current']}/{jar['budget']} - {jar['description']}"
-        for jar in available_jars
-    ])
-    
+     # Fetch fresh jar data from the backend
+    available_jars = await get_all_jars_for_user(db, user_id)
+    # Format jar information for the prompt
+    jar_info_parts = []
+    if available_jars:
+        for jar in available_jars:
+            jar_info_parts.append(
+                f"• {jar.name}: Current Amount: ${jar.amount:.2f} - {jar.description}"
+            )
+    jar_info = "\n".join(jar_info_parts) if jar_info_parts else "No budget jars have been created yet."
+
     return f"""You are a transaction history fetcher. Your job is to retrieve and present transaction data using intelligent tool selection. Analyze the user's query complexity and select the most appropriate tools.
 
 USER INPUT: "{user_query}"

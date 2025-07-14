@@ -2,12 +2,13 @@
 Service Adapters - Lab Compatibility Layer
 =========================================
 
-This module provides adapters that bridge the gap between lab interfaces
-and backend database requirements, ensuring exact compatibility with agent tools.
+Provides adapters that bridge lab sync interfaces with backend async services.
+Removed globals; use factory functions to create adapters.
+Adapters for Classifier, Fee, Jar services.
+Uses concurrent.futures for sync calls to async methods.
 """
 
-from typing import Dict, List, Optional, Tuple, Any, Union
-from datetime import datetime
+from typing import Any, Dict, List, Optional
 from motor.motor_asyncio import AsyncIOMotorDatabase
 import asyncio
 import concurrent.futures
@@ -16,536 +17,195 @@ import concurrent.futures
 from .transaction_service import TransactionService
 from .communication_service import AgentCommunicationService
 from .fee_service import FeeManagementService
-
-# =============================================================================
-# CLASSIFIER TOOLS COMPATIBILITY LAYER
-# =============================================================================
-
-class ClassifierServiceAdapter:
+from .jar_service import JarManagementService
+from .transaction_service import TransactionQueryService
+from .knowledge_service import KnowledgeService
+from .plan_service import PlanManagementService
+from .service_responses import ServiceResult, JarOperationResult
+class BaseAdapter:
     """
-    Adapter that provides the exact interface that classifier tools.py expects.
-    This bridges the gap between lab interface and backend database requirements.
+    Base class for sync/async bridging.
     """
-    
     def __init__(self, db: AsyncIOMotorDatabase, user_id: str):
         self.db = db
         self.user_id = user_id
-        self.transaction_service = TransactionService()
-        self.communication_service = AgentCommunicationService()
     
+    def _call_sync(self, async_method: callable, *args, **kwargs) -> Any:
+        """Call async method from sync context."""
+        def run_async():
+            return asyncio.run(async_method(self.db, self.user_id, *args, **kwargs))
+        
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            return pool.submit(run_async).result()
+
+class ClassifierAdapter(BaseAdapter):
+    """
+    Adapter for classifier tools.py interface.
+    """
     def add_money_to_jar_with_confidence(self, amount: float, jar_name: str, confidence: int) -> str:
-        """
-        Lab-compatible interface for adding money to jar.
-        This function signature matches exactly what classifier tools.py expects.
-        """
-        # Since this is called from async context but classifier expects sync,
-        # we need to handle this carefully
-        try:
-            # Create a new event loop if we're not in one
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # We're already in an async context, create a new thread
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(
-                            lambda: asyncio.run(
-                                self.transaction_service.add_money_to_jar_with_confidence(
-                                    self.db, self.user_id, amount, jar_name, confidence
-                                )
-                            )
-                        )
-                        return future.result()
-                else:
-                    # Run in current loop
-                    return loop.run_until_complete(
-                        self.transaction_service.add_money_to_jar_with_confidence(
-                            self.db, self.user_id, amount, jar_name, confidence
-                        )
-                    )
-            except RuntimeError:
-                # No event loop, create new one
-                return asyncio.run(
-                    self.transaction_service.add_money_to_jar_with_confidence(
-                        self.db, self.user_id, amount, jar_name, confidence
-                    )
-                )
-        except Exception as e:
-            return f"❌ Error adding transaction: {str(e)}"
+        return self._call_sync(TransactionService.add_money_to_jar_with_confidence, amount, jar_name, confidence)
     
     def report_no_suitable_jar(self, description: str, suggestion: str) -> str:
-        """Lab-compatible interface for reporting no suitable jar."""
-        return self.transaction_service.report_no_suitable_jar(description, suggestion)
+        return TransactionService.report_no_suitable_jar(description, suggestion)
     
     def call_transaction_fetcher(self, user_query: str, description: str = "") -> Dict[str, Any]:
-        """
-        Lab-compatible interface for calling transaction fetcher.
-        This function signature matches exactly what classifier tools.py expects.
-        """
-        try:
-            # Handle async call in sync context
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # We're in an async context, use executor
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(
-                            lambda: asyncio.run(
-                                self.communication_service.call_transaction_fetcher(
-                                    self.db, self.user_id, user_query, description
-                                )
-                            )
-                        )
-                        return future.result()
-                else:
-                    # Run in current loop
-                    return loop.run_until_complete(
-                        self.communication_service.call_transaction_fetcher(
-                            self.db, self.user_id, user_query, description
-                        )
-                    )
-            except RuntimeError:
-                # No event loop, create new one
-                return asyncio.run(
-                    self.communication_service.call_transaction_fetcher(
-                        self.db, self.user_id, user_query, description
-                    )
-                )
-        except Exception as e:
-            return {
-                "data": [],
-                "error": f"Failed to fetch transactions: {str(e)}",
-                "description": description
-            }
+        return self._call_sync(AgentCommunicationService.call_transaction_fetcher, user_query, description)
 
-# =============================================================================
-# FEE TOOLS COMPATIBILITY LAYER
-# =============================================================================
-
-class FeeServiceAdapter:
+class FeeAdapter(BaseAdapter):
     """
-    Adapter that provides the exact interface that fee tools.py expects.
-    This bridges the gap between lab interface and backend database requirements.
+    Adapter for fee tools.py interface.
     """
-    
-    def __init__(self, db: AsyncIOMotorDatabase, user_id: str):
-        self.db = db
-        self.user_id = user_id
-        self.fee_service = FeeManagementService()
-    
     def create_recurring_fee(self, name: str, amount: float, description: str, pattern_type: str,
-                           pattern_details: Optional[List[int]], target_jar: str, 
-                           confidence: int = 85) -> str:
-        """
-        Lab-compatible interface for creating recurring fee.
-        This function signature matches exactly what fee tools.py expects.
-        """
-        try:
-            # Handle async call in sync context
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # We're in an async context, use executor
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(
-                            lambda: asyncio.run(
-                                self.fee_service.create_recurring_fee(
-                                    self.db, self.user_id, name, amount, description, 
-                                    pattern_type, pattern_details, target_jar, confidence
-                                )
-                            )
-                        )
-                        return future.result()
-                else:
-                    # Run in current loop
-                    return loop.run_until_complete(
-                        self.fee_service.create_recurring_fee(
-                            self.db, self.user_id, name, amount, description, 
-                            pattern_type, pattern_details, target_jar, confidence
-                        )
-                    )
-            except RuntimeError:
-                # No event loop, create new one
-                return asyncio.run(
-                    self.fee_service.create_recurring_fee(
-                        self.db, self.user_id, name, amount, description, 
-                        pattern_type, pattern_details, target_jar, confidence
-                    )
-                )
-        except Exception as e:
-            return f"❌ Error creating recurring fee: {str(e)}"
+                             pattern_details: Optional[List[int]], target_jar: str, 
+                             confidence: int = 85) -> str:
+        return self._call_sync(FeeManagementService.create_recurring_fee, name, amount, description, 
+                               pattern_type, pattern_details, target_jar, confidence)
     
     def adjust_recurring_fee(self, fee_name: str, new_amount: Optional[float] = None,
-                           new_description: Optional[str] = None, new_pattern_type: Optional[str] = None,
-                           new_pattern_details: Optional[List[int]] = None, new_target_jar: Optional[str] = None,
-                           disable: bool = False, confidence: int = 85) -> str:
-        """
-        Lab-compatible interface for adjusting recurring fee.
-        This function signature matches exactly what fee tools.py expects.
-        """
-        try:
-            # Handle async call in sync context
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # We're in an async context, use executor
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(
-                            lambda: asyncio.run(
-                                self.fee_service.adjust_recurring_fee(
-                                    self.db, self.user_id, fee_name, new_amount, new_description,
-                                    new_pattern_type, new_pattern_details, new_target_jar, disable, confidence
-                                )
-                            )
-                        )
-                        return future.result()
-                else:
-                    # Run in current loop
-                    return loop.run_until_complete(
-                        self.fee_service.adjust_recurring_fee(
-                            self.db, self.user_id, fee_name, new_amount, new_description,
-                            new_pattern_type, new_pattern_details, new_target_jar, disable, confidence
-                        )
-                    )
-            except RuntimeError:
-                # No event loop, create new one
-                return asyncio.run(
-                    self.fee_service.adjust_recurring_fee(
-                        self.db, self.user_id, fee_name, new_amount, new_description,
-                        new_pattern_type, new_pattern_details, new_target_jar, disable, confidence
-                    )
-                )
-        except Exception as e:
-            return f"❌ Error adjusting recurring fee: {str(e)}"
+                             new_description: Optional[str] = None, new_pattern_type: Optional[str] = None,
+                             new_pattern_details: Optional[List[int]] = None, new_target_jar: Optional[str] = None,
+                             disable: bool = False, confidence: int = 85) -> str:
+        return self._call_sync(FeeManagementService.adjust_recurring_fee, fee_name, new_amount, new_description,
+                               new_pattern_type, new_pattern_details, new_target_jar, disable, confidence)
     
     def delete_recurring_fee(self, fee_name: str, reason: str) -> str:
-        """
-        Lab-compatible interface for deleting recurring fee.
-        This function signature matches exactly what fee tools.py expects.
-        """
-        try:
-            # Handle async call in sync context
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # We're in an async context, use executor
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(
-                            lambda: asyncio.run(
-                                self.fee_service.delete_recurring_fee(
-                                    self.db, self.user_id, fee_name, reason
-                                )
-                            )
-                        )
-                        return future.result()
-                else:
-                    # Run in current loop
-                    return loop.run_until_complete(
-                        self.fee_service.delete_recurring_fee(
-                            self.db, self.user_id, fee_name, reason
-                        )
-                    )
-            except RuntimeError:
-                # No event loop, create new one
-                return asyncio.run(
-                    self.fee_service.delete_recurring_fee(
-                        self.db, self.user_id, fee_name, reason
-                    )
-                )
-        except Exception as e:
-            return f"❌ Error deleting recurring fee: {str(e)}"
+        return self._call_sync(FeeManagementService.delete_recurring_fee, fee_name, reason)
     
     def list_recurring_fees(self, active_only: bool = True, target_jar: Optional[str] = None) -> str:
-        """
-        Lab-compatible interface for listing recurring fees.
-        This function signature matches exactly what fee tools.py expects.
-        """
-        try:
-            # Handle async call in sync context
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # We're in an async context, use executor
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(
-                            lambda: asyncio.run(
-                                self.fee_service.list_recurring_fees(
-                                    self.db, self.user_id, active_only, target_jar
-                                )
-                            )
-                        )
-                        return future.result()
-                else:
-                    # Run in current loop
-                    return loop.run_until_complete(
-                        self.fee_service.list_recurring_fees(
-                            self.db, self.user_id, active_only, target_jar
-                        )
-                    )
-            except RuntimeError:
-                # No event loop, create new one
-                return asyncio.run(
-                    self.fee_service.list_recurring_fees(
-                        self.db, self.user_id, active_only, target_jar
-                    )
-                )
-        except Exception as e:
-            return f"❌ Error listing recurring fees: {str(e)}"
+        return self._call_sync(FeeManagementService.list_recurring_fees, active_only, target_jar)
 
-# =============================================================================
-# JAR TOOLS COMPATIBILITY LAYER  
-# =============================================================================
-
-class JarServiceAdapter:
+class JarAdapter(BaseAdapter):
     """
-    Adapter that provides the exact interface that jar tools.py expects.
-    This bridges the gap between lab interface and backend database requirements.
+    Adapter for jar tools.py interface.
+    Converts new JarOperationResult responses back to string format for lab compatibility.
     """
-    
-    def __init__(self, db: AsyncIOMotorDatabase, user_id: str):
-        self.db = db
-        self.user_id = user_id
-        from .jar_service import JarManagementService
-        self.jar_service = JarManagementService()
-    
     def create_jar(self, name: List[str], description: List[str], 
-                  percent: Optional[List[float]] = None, amount: Optional[List[float]] = None,
-                  confidence: int = 85) -> str:
-        """
-        Lab-compatible interface for creating jars.
-        This function signature matches exactly what jar tools.py expects.
-        """
-        try:
-            # Handle async call in sync context
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # We're in an async context, use executor
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(
-                            lambda: asyncio.run(
-                                self.jar_service.create_jar(
-                                    self.db, self.user_id, name, description, 
-                                    percent, amount, confidence
-                                )
-                            )
-                        )
-                        return future.result()
-                else:
-                    # Run in current loop
-                    return loop.run_until_complete(
-                        self.jar_service.create_jar(
-                            self.db, self.user_id, name, description, 
-                            percent, amount, confidence
-                        )
-                    )
-            except RuntimeError:
-                # No event loop, create new one
-                return asyncio.run(
-                    self.jar_service.create_jar(
-                        self.db, self.user_id, name, description, 
-                        percent, amount, confidence
-                    )
-                )
-        except Exception as e:
-            return f"❌ Error creating jar: {str(e)}"
+                   percent: Optional[List[float]] = None, amount: Optional[List[float]] = None,
+                   confidence: int = 85) -> str:
+        result = self._call_sync(JarManagementService.create_jar, name, description, percent, amount, confidence)
+        return self._format_jar_result(result)
     
     def update_jar(self, jar_name: List[str], new_name: Optional[List[str]] = None,
-                  new_description: Optional[List[str]] = None, new_percent: Optional[List[float]] = None,
-                  new_amount: Optional[List[float]] = None, confidence: int = 85) -> str:
-        """
-        Lab-compatible interface for updating jars.
-        This function signature matches exactly what jar tools.py expects.
-        """
-        try:
-            # Handle async call in sync context
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # We're in an async context, use executor
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(
-                            lambda: asyncio.run(
-                                self.jar_service.update_jar(
-                                    self.db, self.user_id, jar_name, new_name, new_description,
-                                    new_percent, new_amount, confidence
-                                )
-                            )
-                        )
-                        return future.result()
-                else:
-                    # Run in current loop
-                    return loop.run_until_complete(
-                        self.jar_service.update_jar(
-                            self.db, self.user_id, jar_name, new_name, new_description,
-                            new_percent, new_amount, confidence
-                        )
-                    )
-            except RuntimeError:
-                # No event loop, create new one
-                return asyncio.run(
-                    self.jar_service.update_jar(
-                        self.db, self.user_id, jar_name, new_name, new_description,
-                        new_percent, new_amount, confidence
-                    )
-                )
-        except Exception as e:
-            return f"❌ Error updating jar: {str(e)}"
+                   new_description: Optional[List[str]] = None, new_percent: Optional[List[float]] = None,
+                   new_amount: Optional[List[float]] = None, confidence: int = 85) -> str:
+        result = self._call_sync(JarManagementService.update_jar, jar_name, new_name, new_description, 
+                               new_percent, new_amount, confidence)
+        return self._format_jar_result(result)
     
     def delete_jar(self, jar_name: List[str], reason: str) -> str:
-        """
-        Lab-compatible interface for deleting jars.
-        This function signature matches exactly what jar tools.py expects.
-        """
-        try:
-            # Handle async call in sync context
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # We're in an async context, use executor
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(
-                            lambda: asyncio.run(
-                                self.jar_service.delete_jar(
-                                    self.db, self.user_id, jar_name, reason
-                                )
-                            )
-                        )
-                        return future.result()
-                else:
-                    # Run in current loop
-                    return loop.run_until_complete(
-                        self.jar_service.delete_jar(
-                            self.db, self.user_id, jar_name, reason
-                        )
-                    )
-            except RuntimeError:
-                # No event loop, create new one
-                return asyncio.run(
-                    self.jar_service.delete_jar(
-                        self.db, self.user_id, jar_name, reason
-                    )
-                )
-        except Exception as e:
-            return f"❌ Error deleting jar: {str(e)}"
+        result = self._call_sync(JarManagementService.delete_jar, jar_name, reason)
+        return self._format_jar_result(result)
     
     def list_jars(self) -> str:
-        """
-        Lab-compatible interface for listing jars.
-        This function signature matches exactly what jar tools.py expects.
-        """
-        try:
-            # Handle async call in sync context
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # We're in an async context, use executor
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(
-                            lambda: asyncio.run(
-                                self.jar_service.list_jars(
-                                    self.db, self.user_id
-                                )
-                            )
-                        )
-                        return future.result()
-                else:
-                    # Run in current loop
-                    return loop.run_until_complete(
-                        self.jar_service.list_jars(
-                            self.db, self.user_id
-                        )
-                    )
-            except RuntimeError:
-                # No event loop, create new one
-                return asyncio.run(
-                    self.jar_service.list_jars(
-                        self.db, self.user_id
-                    )
-                )
-        except Exception as e:
-            return f"❌ Error listing jars: {str(e)}"
-
-# =============================================================================
-# GLOBAL SERVICE INSTANCES FOR AGENT COMPATIBILITY
-# =============================================================================
-
-# Global variables to hold service instances configured with database context
-_classifier_transaction_service = None
-_classifier_communication_service = None
-_fee_service = None
-_jar_service = None
-
-def configure_classifier_services(db: AsyncIOMotorDatabase, user_id: str):
-    """
-    Configure global service instances for classifier tools.py compatibility.
-    This must be called before classifier tools are used.
-    """
-    global _classifier_transaction_service, _classifier_communication_service
+        return self._call_sync(JarManagementService.list_jars)
     
-    adapter = ClassifierServiceAdapter(db, user_id)
-    _classifier_transaction_service = adapter
-    _classifier_communication_service = adapter
+    def _format_jar_result(self, result) -> str:
+        """Convert JarOperationResult back to string format for lab compatibility."""
+        if hasattr(result, 'is_error') and result.is_error():
+            # Format error response with emoji for consistency
+            error_message = result.get_error_message()
+            return f"❌ {error_message}"
+        elif hasattr(result, 'is_success') and result.is_success():
+            # Format success response with emoji for consistency
+            message = result.message
+            # Add warnings if present
+            if hasattr(result, 'warnings') and result.warnings:
+                warning_text = "\n".join(result.warnings)
+                message += f"\n{warning_text}"
+            return f"✅ {message}"
+        else:
+            # Fallback for string responses (like list_jars)
+            return str(result)
 
-def configure_fee_services(db: AsyncIOMotorDatabase, user_id: str):
+class TransactionFetcherAdapter(BaseAdapter):
     """
-    Configure global service instances for fee tools.py compatibility.
-    This must be called before fee tools are used.
+    Adapter for transaction_fetcher tools.py interface.
+    Proxies to TransactionQueryService methods.
     """
-    global _fee_service
+    def parse_flexible_date(self, date_str: str):
+        return TransactionQueryService._parse_flexible_date(date_str)
     
-    adapter = FeeServiceAdapter(db, user_id)
-    _fee_service = adapter
-
-def configure_jar_services(db: AsyncIOMotorDatabase, user_id: str):
-    """
-    Configure global service instances for jar tools.py compatibility.
-    This must be called before jar tools are used.
-    """
-    global _jar_service
+    def time_in_range(self, transaction_time: str, start_hour: int, end_hour: int) -> bool:
+        return TransactionQueryService._time_in_range(transaction_time, start_hour, end_hour)
     
-    adapter = JarServiceAdapter(db, user_id)
-    _jar_service = adapter
+    def get_jar_transactions(self, jar_name: str = None, limit: int = 50, description: str = "") -> Dict[str, Any]:
+        return self._call_sync(TransactionQueryService.get_jar_transactions, jar_name, limit, description)
+    
+    def get_time_period_transactions(self, jar_name: str = None, start_date: str = "last_month", 
+                                   end_date: str = None, limit: int = 50, description: str = "") -> Dict[str, Any]:
+        return self._call_sync(TransactionQueryService.get_time_period_transactions, 
+                               jar_name, start_date, end_date, limit, description)
+    
+    def get_amount_range_transactions(self, jar_name: str = None, min_amount: float = None, 
+                                    max_amount: float = None, limit: int = 50, description: str = "") -> Dict[str, Any]:
+        return self._call_sync(TransactionQueryService.get_amount_range_transactions, 
+                               jar_name, min_amount, max_amount, limit, description)
+    
+    def get_hour_range_transactions(self, jar_name: str = None, start_hour: int = 6, 
+                                  end_hour: int = 22, limit: int = 50, description: str = "") -> Dict[str, Any]:
+        return self._call_sync(TransactionQueryService.get_hour_range_transactions, 
+                               jar_name, start_hour, end_hour, limit, description)
+    
+    def get_source_transactions(self, jar_name: str = None, source_type: str = "vpbank_api", 
+                              limit: int = 50, description: str = "") -> Dict[str, Any]:
+        return self._call_sync(TransactionQueryService.get_source_transactions, 
+                               jar_name, source_type, limit, description)
+    
+    def get_complex_transaction(self, jar_name: str = None, start_date: str = None, end_date: str = None,
+                              min_amount: float = None, max_amount: float = None, start_hour: int = None,
+                              end_hour: int = None, source_type: str = None, limit: int = 50, 
+                              description: str = "") -> Dict[str, Any]:
+        return self._call_sync(TransactionQueryService.get_complex_transaction, 
+                               jar_name, start_date, end_date, min_amount, max_amount, 
+                               start_hour, end_hour, source_type, limit, description)
+        
+class KnowledgeAdapter(BaseAdapter):
+    """
+    Adapter for knowledge tools.py interface.
+    """
+    def get_application_information(self, description: str = "") -> Dict[str, Any]:
+        return self._call_sync(KnowledgeService.get_application_information, description)
+    
+    def respond(self, answer: str, description: str = "") -> Dict[str, Any]:
+        return KnowledgeService.respond(answer, description)
+class PlanAdapter(BaseAdapter):
+    """
+    Adapter for plan tools.py interface.
+    """
+    def create_plan(self, name: str, description: str, status: str = "active", 
+                   jar_propose_adjust_details: Optional[str] = None, confidence: int = 85) -> str:
+        return self._call_sync(PlanManagementService.create_plan, name, description, status, 
+                               jar_propose_adjust_details, confidence)
+    
+    def adjust_plan(self, name: str, description: Optional[str] = None, status: Optional[str] = None,
+                   jar_propose_adjust_details: Optional[str] = None, confidence: int = 85) -> str:
+        return self._call_sync(PlanManagementService.adjust_plan, name, description, status,
+                               jar_propose_adjust_details, confidence)
+    
+    def get_plan(self, status: str = "active", description: str = "") -> Dict[str, Any]:
+        return self._call_sync(PlanManagementService.get_plan, status, description)
+    
+    def delete_plan(self, plan_name: str, reason: str = "") -> str:
+        return self._call_sync(PlanManagementService.delete_plan, plan_name, reason)
+    
+    def call_transaction_fetcher(self, user_query: str, description: str = "") -> Dict[str, Any]:
+        return self._call_sync(AgentCommunicationService.call_transaction_fetcher, user_query, description)
 
-def get_transaction_service():
-    """
-    Get transaction service instance for classifier tools.py.
-    This function signature matches exactly what classifier tools.py expects.
-    """
-    if _classifier_transaction_service is None:
-        raise RuntimeError(
-            "Classifier services not configured. Call configure_classifier_services() first."
-        )
-    return _classifier_transaction_service
+# Factory functions
+def get_classifier_adapter(db: AsyncIOMotorDatabase, user_id: str) -> ClassifierAdapter:
+    return ClassifierAdapter(db, user_id)
 
-def get_communication_service():
-    """
-    Get communication service instance for classifier tools.py.
-    This function signature matches exactly what classifier tools.py expects.
-    """
-    if _classifier_communication_service is None:
-        raise RuntimeError(
-            "Classifier services not configured. Call configure_classifier_services() first."
-        )
-    return _classifier_communication_service
+def get_fee_adapter(db: AsyncIOMotorDatabase, user_id: str) -> FeeAdapter:
+    return FeeAdapter(db, user_id)
 
-def get_fee_service():
-    """
-    Get fee service instance for fee tools.py.
-    This function signature matches exactly what fee tools.py expects.
-    """
-    if _fee_service is None:
-        raise RuntimeError(
-            "Fee services not configured. Call configure_fee_services() first."
-        )
-    return _fee_service
+def get_jar_adapter(db: AsyncIOMotorDatabase, user_id: str) -> JarAdapter:
+    return JarAdapter(db, user_id)
 
-def get_jar_service():
-    """
-    Get jar service instance for jar tools.py.
-    This function signature matches exactly what jar tools.py expects.
-    """
-    if _jar_service is None:
-        raise RuntimeError(
-            "Jar services not configured. Call configure_jar_services() first."
-        )
-    return _jar_service
+def get_transaction_fetcher_service(db: AsyncIOMotorDatabase, user_id: str) -> TransactionFetcherAdapter:
+    return TransactionFetcherAdapter(db, user_id)
+
+def get_knowledge_adapter(db: AsyncIOMotorDatabase, user_id: str) -> KnowledgeAdapter:
+    return KnowledgeAdapter(db, user_id)
+
+def get_plan_adapter(db: AsyncIOMotorDatabase, user_id: str) -> PlanAdapter:
+    return PlanAdapter(db, user_id)

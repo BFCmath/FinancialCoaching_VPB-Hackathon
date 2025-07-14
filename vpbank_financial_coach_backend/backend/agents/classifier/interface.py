@@ -7,42 +7,34 @@ from . import main as classifier_main
 from backend.models.conversation import ConversationTurnInDB
 
 class ClassifierInterface(BaseWorkerInterface):
-    """Interface for the Transaction Classifier Agent."""
+    """Interface for the Transaction Classifier Agent with Enhanced Pattern 2."""
 
     agent_name = "classifier"
 
-    def __init__(self, db: AsyncIOMotorDatabase = None, user_id: str = None):
-        """Initialize with optional database context."""
-        self.db = db
-        self.user_id = user_id
-
-    def process_task(self, task: str, conversation_history: List[ConversationTurnInDB]) -> Dict[str, Any]:
+    async def process_task(self, task: str, db: AsyncIOMotorDatabase, user_id: str, conversation_history: List[ConversationTurnInDB] = None) -> Dict[str, Any]:
         """
-        Processes a transaction classification task.
+        Processes a transaction classification task with Enhanced Pattern 2.
         
         Args:
             task: The user's request.
+            db: Database connection for user data (required)
+            user_id: User identifier for data isolation (required)
             conversation_history: The history of the conversation.
                 
         Returns:
             A dictionary containing the response and a flag for follow-up.
             Example: {"response": "...", "requires_follow_up": False}
         """
-        # Use the synchronous wrapper that handles async internally
-        return classifier_main.process_task(task, conversation_history)
-
-    async def process_task_async(self, task: str, conversation_history: List[ConversationTurnInDB]) -> Dict[str, Any]:
-        """
-        Async version that provides full database functionality.
-        
-        Args:
-            task: The user's request.
-            conversation_history: The history of the conversation.
-                
-        Returns:
-            A dictionary containing the response and a flag for follow-up.
-        """
-        return await classifier_main.process_task_async(task, conversation_history, self.db, self.user_id)
+        # Validate required parameters for production
+        if not db:
+            raise ValueError("Database connection is required for production classifier agent")
+        if not user_id:
+            raise ValueError("User ID is required for production classifier agent")
+            
+        if conversation_history is None:
+            conversation_history = []
+            
+        return await classifier_main.process_task_async(task, conversation_history, db, user_id)
 
     def get_capabilities(self) -> Optional[List[str]]:
         return [
@@ -52,6 +44,6 @@ class ClassifierInterface(BaseWorkerInterface):
             "Provide confidence-based classifications"
         ]
 
-def get_agent_interface(db: AsyncIOMotorDatabase = None, user_id: str = None) -> ClassifierInterface:
+def get_agent_interface() -> ClassifierInterface:
     """Factory function to get an instance of the agent interface."""
-    return ClassifierInterface(db, user_id)
+    return ClassifierInterface()

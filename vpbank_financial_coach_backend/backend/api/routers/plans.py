@@ -3,10 +3,6 @@ import os
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 
-# --- Path Setup ---
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
-sys.path.append(project_root)
 
 from backend.api import deps
 from backend.utils import db_utils

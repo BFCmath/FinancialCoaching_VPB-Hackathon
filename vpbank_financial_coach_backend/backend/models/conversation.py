@@ -10,6 +10,7 @@ class ConversationTurnBase(BaseModel):
     agent_output: str = Field(..., description="The agent's response to the user.")
     agent_list: List[str] = Field(default_factory=list, example=["orchestrator", "jar_agent"], description="A list of agents that were involved in generating the response.")
     tool_call_list: List[str] = Field(default_factory=list, example=["jar_agent.list_jars()"], description="A list of tools that were called by the agents.")
+    metadata: Optional[dict] = Field(default_factory=dict, description="Additional metadata for the conversation turn, including agent stage information and other context.")
 
 class ConversationTurnCreate(ConversationTurnBase):
     """

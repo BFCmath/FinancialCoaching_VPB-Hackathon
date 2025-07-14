@@ -3,37 +3,14 @@ import os
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 
-# --- Path Setup ---
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
-sys.path.append(project_root)
-
 from backend.api import deps
 from backend.utils import db_utils
 from backend.models import user as user_model
 from backend.models import fee as fee_model
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-# We reuse the original, pure calculation function to avoid re-implementing it.
-from backend.services.financial_services import FeeManagementService
 from datetime import datetime, timedelta
-
-def calculate_next_fee_occurrence(pattern_type: str, pattern_details: List[int], from_date: datetime = None) -> datetime:
-    """Calculate when fee should next occur based on pattern"""
-    if from_date is None:
-        from_date = datetime.utcnow()
-    
-    if pattern_type == "daily":
-        return from_date + timedelta(days=1)
-    elif pattern_type == "weekly":
-        # Assume pattern_details contains day numbers (0=Monday, 6=Sunday)
-        return from_date + timedelta(weeks=1)
-    elif pattern_type == "monthly":
-        # Assume pattern_details contains day of month
-        return from_date + timedelta(days=30)  # Simplified
-    
-    # Default fallback
-    return from_date + timedelta(days=1)
+from backend.utils.db_utils import calculate_next_fee_occurrence
 
 router = APIRouter()
 

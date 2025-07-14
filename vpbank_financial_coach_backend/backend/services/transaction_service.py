@@ -1,248 +1,298 @@
 """
 Transaction Services - Complete Implementation from Lab
-======================================================
+=======================================================
 
-This module implements transaction services with full functionality from the lab
-with database backend integration, including advanced querying capabilities.
+This module implements the complete transaction services ported from the lab
+with database backend, maintaining exact same interface and behavior.
+Covers all transaction operations from lab utils.py and service.py:
+- save_transaction, get_all_transactions, get_transactions_by_jar, get_transactions_by_date_range
+- get_transactions_by_amount_range, get_transactions_by_source, calculate_jar_spending_total
+- add_money_to_jar_with_confidence, report_no_suitable_jar, request_more_info
+- All query methods including get_complex_transaction
+All methods are async where appropriate.
 """
 
-from typing import Dict, List, Optional, Tuple, Any, Union
-from datetime import datetime, timedelta, date
+from typing import Dict, Any, List, Optional, Tuple
+from datetime import datetime, date, timedelta
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 # Import database utilities and models
 from backend.utils import db_utils
-from backend.models import transaction
-from .core_services import UserSettingsService, CalculationService
-
-# =============================================================================
-# TRANSACTION SERVICE - FROM LAB
-# =============================================================================
+from backend.models.transaction import TransactionInDB, TransactionCreate
+from backend.models.jar import JarUpdate
+from .core_services import CalculationService, UserSettingsService
+from .confidence_service import ConfidenceService
 
 class TransactionService:
     """
-    Transaction service ported from lab with database backend.
+    Transaction management and query service.
+    Combines functionality from lab's classifier_test and transaction_fetcher.
     """
     
     @staticmethod
-    async def add_money_to_jar_with_confidence(db: AsyncIOMotorDatabase, user_id: str, 
-                                             amount: float, jar_name: str, confidence: int) -> str:
-        """Add transaction to jar with confidence level."""
-        # Validate jar exists
-        jar_obj = await db_utils.get_jar_by_name(db, user_id, jar_name.lower().replace(' ', '_'))
-        if not jar_obj:
-            return f"❌ Jar '{jar_name}' not found."
+    async def save_transaction(db: AsyncIOMotorDatabase, user_id: str, transaction_data: TransactionCreate) -> TransactionInDB:
+        """Save transaction to database."""
+        is_valid, errors = await TransactionService.validate_transaction_data(db, user_id, transaction_data)
+        if not is_valid:
+            raise ValueError(f"Invalid transaction data: {', '.join(errors)}")
         
-        # Create transaction
-        new_transaction = transaction.TransactionInDB(
-            id=str(datetime.utcnow().timestamp()),
-            user_id=user_id,
+        return await db_utils.create_transaction_in_db(db, user_id, transaction_data)
+    
+    @staticmethod
+    async def get_all_transactions(db: AsyncIOMotorDatabase, user_id: str) -> List[TransactionInDB]:
+        """Get all transactions for user."""
+        return await db_utils.get_all_transactions_for_user(db, user_id)
+    
+    @staticmethod
+    async def get_transactions_by_jar(db: AsyncIOMotorDatabase, user_id: str, jar_name: str) -> List[TransactionInDB]:
+        """Get transactions for specific jar."""
+        jar = await db_utils.get_jar_by_name(db, user_id, jar_name.lower().replace(' ', '_'))
+        if not jar:
+            raise ValueError(f"Jar '{jar_name}' not found")
+        return await db_utils.get_transactions_by_jar_for_user(db, user_id, jar.name)
+    
+    @staticmethod
+    async def get_transactions_by_date_range(db: AsyncIOMotorDatabase, user_id: str, 
+                                             start_date: str, end_date: Optional[str] = None) -> List[TransactionInDB]:
+        """Get transactions within date range."""
+        start_parsed = TransactionQueryService._parse_flexible_date(start_date)
+        end_parsed = TransactionQueryService._parse_flexible_date(end_date) if end_date else datetime.now().date()
+        return await db_utils.get_transactions_by_date_range_for_user(db, user_id, start_parsed, end_parsed)
+    
+    @staticmethod
+    async def get_transactions_by_amount_range(db: AsyncIOMotorDatabase, user_id: str, 
+                                               min_amount: Optional[float] = None, max_amount: Optional[float] = None) -> List[TransactionInDB]:
+        """Get transactions within amount range."""
+        return await db_utils.get_transactions_by_amount_range_for_user(db, user_id, min_amount, max_amount)
+
+    @staticmethod
+    async def get_transactions_by_source(db: AsyncIOMotorDatabase, user_id: str, source: str) -> List[TransactionInDB]:
+        """Get transactions by source type."""
+        return await db_utils.get_transactions_by_source_for_user(db, user_id, source)
+    
+    @staticmethod
+    async def calculate_jar_spending_total(db: AsyncIOMotorDatabase, user_id: str, jar_name: str) -> float:
+        """Calculate total spending for a specific jar."""
+        transactions = await TransactionService.get_transactions_by_jar(db, user_id, jar_name)
+        return sum(t.amount for t in transactions)
+    
+    @staticmethod
+    async def add_money_to_jar_with_confidence(db: AsyncIOMotorDatabase, user_id: str,
+                                               amount: float, jar_name: str, confidence: int) -> str:
+        """Add money to jar with confidence-based formatting."""
+        jar = await db_utils.get_jar_by_name(db, user_id, jar_name.lower().replace(' ', '_'))
+        if not jar:
+            return "❌ Error: Jar '{jar_name}' not found"
+        
+        transaction = TransactionCreate(
             amount=amount,
-            jar=jar_obj.name,
-            description=f"Transaction added with {confidence}% confidence",
+            jar=jar.name,
+            description=f"Transaction classified to {jar.name}",
             date=datetime.now().strftime("%Y-%m-%d"),
             time=datetime.now().strftime("%H:%M"),
             source="manual_input"
         )
         
-        # Save transaction
-        await db_utils.create_transaction_in_db(db, user_id, new_transaction)
+        await TransactionService.save_transaction(db, user_id, transaction)
         
-        # Update jar current amounts
-        new_current_amount = jar_obj.current_amount + amount
-        total_income = await UserSettingsService.get_user_total_income(db, user_id)
-        new_current_percent = new_current_amount / total_income
+        # Update jar current amount
+        new_current_amount = jar.current_amount + amount
+        new_current_percent = await CalculationService.calculate_percent_from_amount(db, user_id, new_current_amount)
+        update_data = JarUpdate(current_amount=new_current_amount, current_percent=new_current_percent)
+        await db_utils.update_jar_in_db(db, user_id, jar.name, update_data)
         
-        await db_utils.update_jar_in_db(db, user_id, jar_obj.name, {
-            "current_amount": new_current_amount,
-            "current_percent": new_current_percent
-        })
-        
-        confidence_emoji = "✅" if confidence >= 90 else "⚠️" if confidence >= 70 else "❓"
-        return f"{confidence_emoji} Added {CalculationService.format_currency(amount)} to '{jar_obj.name}' jar ({confidence}% confident). New balance: {CalculationService.format_currency(new_current_amount)}"
+        result = f"Added {CalculationService.format_currency(amount)} to {jar.name} jar"
+        return ConfidenceService.format_confidence_response(result, confidence)
     
     @staticmethod
     def report_no_suitable_jar(description: str, suggestion: str) -> str:
-        """Report when no suitable jar found."""
-        return f"❌ No suitable jar found for: {description}\n💡 Suggestion: {suggestion}"
+        """Report when no existing jar matches the transaction."""
+        return f"❌ Cannot classify '{description}'. {suggestion}"
     
     @staticmethod
     def request_more_info(question: str) -> str:
-        """Request more information from user."""
+        """Ask user for more information when input is ambiguous."""
         return f"❓ {question}"
-
-# =============================================================================
-# TRANSACTION QUERY SERVICE - ADVANCED QUERYING FROM LAB
-# =============================================================================
+    
+    @staticmethod
+    async def validate_transaction_data(db: AsyncIOMotorDatabase, user_id: str, transaction_data: TransactionCreate) -> Tuple[bool, List[str]]:
+        """Validate transaction data."""
+        errors = []
+        
+        if not CalculationService.validate_positive_amount(transaction_data.amount):
+            errors.append(f"Amount {transaction_data.amount} must be positive")
+        
+        jar = await db_utils.get_jar_by_name(db, user_id, transaction_data.jar)
+        if not jar:
+            errors.append(f"Jar '{transaction_data.jar}' does not exist")
+        
+        if not transaction_data.description or not transaction_data.description.strip():
+            errors.append("Description cannot be empty")
+        
+        # Validate date format
+        try:
+            datetime.strptime(transaction_data.date, "%Y-%m-%d")
+        except ValueError:
+            errors.append(f"Invalid date format: {transaction_data.date}")
+        
+        return len(errors) == 0, errors
 
 class TransactionQueryService:
     """
-    Advanced transaction querying service from lab with full functionality.
+    Advanced transaction querying service.
     """
     
     @staticmethod
-    async def get_jar_transactions(db: AsyncIOMotorDatabase, user_id: str, 
-                                  jar_name: str = None, limit: int = 50, description: str = "") -> Dict[str, Any]:
-        """Get transactions for specific jar."""
+    async def get_jar_transactions(db: AsyncIOMotorDatabase, user_id: str, jar_name: Optional[str] = None, 
+                                   limit: int = 50, description: str = "") -> Dict[str, Any]:
+        """Get transactions filtered by jar."""
         if jar_name:
-            jar_obj = await db_utils.get_jar_by_name(db, user_id, jar_name.lower().replace(' ', '_'))
-            if not jar_obj:
-                return {"data": [], "description": f"jar '{jar_name}' not found"}
-            transactions = await db_utils.get_transactions_by_jar_for_user(db, user_id, jar_obj.name)
+            transactions = await TransactionService.get_transactions_by_jar(db, user_id, jar_name)
         else:
-            transactions = await db_utils.get_all_transactions_for_user(db, user_id)
+            transactions = await TransactionService.get_all_transactions(db, user_id)
         
-        # Convert to dict format expected by agents
-        transaction_dicts = [
-            {
-                "amount": t.amount,
-                "jar": t.jar,
-                "description": t.description,
-                "date": t.date,
-                "time": t.time,
-                "source": t.source
-            }
-            for t in transactions[:limit]
-        ]
-        
-        auto_description = description or (
-            f"{jar_name} transactions" if jar_name else "all transactions"
-        )
-        
-        return {
-            "data": transaction_dicts,
-            "description": f"retrieved {len(transaction_dicts)} {auto_description}"
-        }
+        transaction_dicts = [t.dict() for t in transactions[:limit]]
+        auto_desc = description or (f"{jar_name} transactions" if jar_name else "all transactions")
+        return {"data": transaction_dicts, "description": f"retrieved {len(transaction_dicts)} {auto_desc}"}
     
     @staticmethod
-    async def get_recent_transactions(db: AsyncIOMotorDatabase, user_id: str, days: int = 7) -> List[Dict[str, Any]]:
-        """Get recent transactions within specified days."""
-        transactions = await db_utils.get_all_transactions_for_user(db, user_id)
-        
-        # Filter by date (simplified - assumes date format YYYY-MM-DD)
-        cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-        recent_transactions = [t for t in transactions if t.date >= cutoff_date]
-        
-        return [
-            {
-                "amount": t.amount,
-                "jar": t.jar,
-                "description": t.description,
-                "date": t.date,
-                "time": t.time,
-                "source": t.source
-            }
-            for t in recent_transactions
-        ]
-    
-    @staticmethod
-    async def get_time_period_transactions(db: AsyncIOMotorDatabase, user_id: str,
-                                         jar_name: str = None, start_date: str = "last_month", 
-                                         end_date: str = None, limit: int = 50, description: str = "") -> Dict[str, Any]:
-        """Get transactions within date range with flexible date parsing."""
-        # Parse dates using flexible date parsing
-        start_date_parsed = TransactionQueryService.parse_flexible_date(start_date)
-        if end_date:
-            end_date_parsed = TransactionQueryService.parse_flexible_date(end_date)
-        else:
-            end_date_parsed = datetime.now().date()
-        
-        # Get base transactions
+    async def get_time_period_transactions(db: AsyncIOMotorDatabase, user_id: str, jar_name: Optional[str] = None, 
+                                           start_date: str = "last_month", end_date: Optional[str] = None, 
+                                           limit: int = 50, description: str = "") -> Dict[str, Any]:
+        """Get transactions within date range."""
         if jar_name:
-            jar_obj = await db_utils.get_jar_by_name(db, user_id, jar_name.lower().replace(' ', '_'))
-            if not jar_obj:
-                return {"data": [], "description": f"jar '{jar_name}' not found"}
-            transactions = await db_utils.get_transactions_by_jar_for_user(db, user_id, jar_obj.name)
+            transactions = await TransactionService.get_transactions_by_jar(db, user_id, jar_name)
         else:
-            transactions = await db_utils.get_all_transactions_for_user(db, user_id)
+            transactions = await TransactionService.get_all_transactions(db, user_id)
         
-        # Filter by date range
-        filtered_transactions = []
-        for t in transactions:
-            try:
-                t_date = datetime.strptime(t.date, "%Y-%m-%d").date()
-                if start_date_parsed <= t_date <= end_date_parsed:
-                    filtered_transactions.append(t)
-            except ValueError:
-                continue  # Skip invalid dates
+        start_parsed = TransactionQueryService._parse_flexible_date(start_date)
+        end_parsed = TransactionQueryService._parse_flexible_date(end_date) if end_date else datetime.now().date()
         
-        # Convert to dict and limit results
-        transaction_dicts = [
-            {
-                "amount": t.amount,
-                "jar": t.jar,
-                "description": t.description,
-                "date": t.date,
-                "time": t.time,
-                "source": t.source
-            }
-            for t in filtered_transactions[:limit]
-        ]
+        filtered = [t for t in transactions if start_parsed <= datetime.strptime(t.date, "%Y-%m-%d").date() <= end_parsed][:limit]
+        transaction_dicts = [t.dict() for t in filtered]
         
-        auto_description = description or (
-            f"{jar_name} transactions from {start_date} to {end_date}" if jar_name 
-            else f"all transactions from {start_date} to {end_date}"
-        )
-        
-        return {
-            "data": transaction_dicts,
-            "description": f"retrieved {len(transaction_dicts)} {auto_description}"
-        }
+        auto_desc = description or (f"{jar_name} transactions from {start_date} to {end_date or 'now'}" if jar_name else f"all transactions from {start_date} to {end_date or 'now'}")
+        return {"data": transaction_dicts, "description": f"retrieved {len(transaction_dicts)} {auto_desc}"}
     
     @staticmethod
-    async def get_amount_range_transactions(db: AsyncIOMotorDatabase, user_id: str,
-                                          jar_name: str = None, min_amount: float = None, 
-                                          max_amount: float = None, limit: int = 50, 
-                                          description: str = "") -> Dict[str, Any]:
+    async def get_amount_range_transactions(db: AsyncIOMotorDatabase, user_id: str, jar_name: Optional[str] = None, 
+                                            min_amount: float = None, max_amount: float = None, limit: int = 50, 
+                                            description: str = "") -> Dict[str, Any]:
         """Get transactions within amount range."""
-        # Get base transactions
         if jar_name:
-            jar_obj = await db_utils.get_jar_by_name(db, user_id, jar_name.lower().replace(' ', '_'))
-            if not jar_obj:
-                return {"data": [], "description": f"jar '{jar_name}' not found"}
-            transactions = await db_utils.get_transactions_by_jar_for_user(db, user_id, jar_obj.name)
+            transactions = await TransactionService.get_transactions_by_jar(db, user_id, jar_name)
         else:
-            transactions = await db_utils.get_all_transactions_for_user(db, user_id)
+            transactions = await TransactionService.get_all_transactions(db, user_id)
         
-        # Filter by amount range
-        filtered_transactions = []
+        filtered = []
         for t in transactions:
-            amount_match = True
-            if min_amount is not None and t.amount < min_amount:
-                amount_match = False
-            if max_amount is not None and t.amount > max_amount:
-                amount_match = False
-            
-            if amount_match:
-                filtered_transactions.append(t)
+            if (min_amount is None or t.amount >= min_amount) and (max_amount is None or t.amount <= max_amount):
+                filtered.append(t)
         
-        # Convert to dict and limit results
-        transaction_dicts = [
-            {
-                "amount": t.amount,
-                "jar": t.jar,
-                "description": t.description,
-                "date": t.date,
-                "time": t.time,
-                "source": t.source
-            }
-            for t in filtered_transactions[:limit]
-        ]
+        filtered = filtered[:limit]
+        transaction_dicts = [t.dict() for t in filtered]
         
-        range_desc = f"${min_amount or 0:.2f} - ${max_amount or 'unlimited'}"
-        auto_description = description or (
-            f"{jar_name} transactions in range {range_desc}" if jar_name 
-            else f"all transactions in range {range_desc}"
-        )
-        
-        return {
-            "data": transaction_dicts,
-            "description": f"retrieved {len(transaction_dicts)} {auto_description}"
-        }
+        range_desc = f"{CalculationService.format_currency(min_amount or 0)} - {CalculationService.format_currency(max_amount or 'unlimited')}"
+        auto_desc = description or (f"{jar_name} transactions in range {range_desc}" if jar_name else f"all transactions in range {range_desc}")
+        return {"data": transaction_dicts, "description": f"retrieved {len(transaction_dicts)} {auto_desc}"}
     
     @staticmethod
-    def parse_flexible_date(date_str: str) -> date:
-        """Parse various date formats including relative dates."""
+    async def get_hour_range_transactions(db: AsyncIOMotorDatabase, user_id: str, jar_name: Optional[str] = None, 
+                                          start_hour: int = 6, end_hour: int = 22, limit: int = 50, 
+                                          description: str = "") -> Dict[str, Any]:
+        """Get transactions within hour range."""
+        if jar_name:
+            transactions = await TransactionService.get_transactions_by_jar(db, user_id, jar_name)
+        else:
+            transactions = await TransactionService.get_all_transactions(db, user_id)
+        
+        filtered = [t for t in transactions if TransactionQueryService._time_in_range(t.time, start_hour, end_hour)][:limit]
+        transaction_dicts = [t.dict() for t in filtered]
+        
+        time_range = f"{start_hour:02d}:00 - {end_hour:02d}:00"
+        auto_desc = description or (f"{jar_name} transactions between {time_range}" if jar_name else f"all transactions between {time_range}")
+        return {"data": transaction_dicts, "description": f"retrieved {len(transaction_dicts)} {auto_desc}"}
+    
+    @staticmethod
+    async def get_source_transactions(db: AsyncIOMotorDatabase, user_id: str, jar_name: Optional[str] = None, 
+                                      source_type: str = "vpbank_api", limit: int = 50, 
+                                      description: str = "") -> Dict[str, Any]:
+        """Get transactions by source type."""
+        if jar_name:
+            transactions = await TransactionService.get_transactions_by_jar(db, user_id, jar_name)
+        else:
+            transactions = await TransactionService.get_all_transactions(db, user_id)
+        
+        filtered = [t for t in transactions if t.source == source_type][:limit]
+        transaction_dicts = [t.dict() for t in filtered]
+        
+        auto_desc = description or (f"{jar_name} transactions from {source_type}" if jar_name else f"all transactions from {source_type}")
+        return {"data": transaction_dicts, "description": f"retrieved {len(transaction_dicts)} {auto_desc}"}
+    
+    @staticmethod
+    async def get_complex_transaction(db: AsyncIOMotorDatabase, user_id: str,
+                                      jar_name: Optional[str] = None,
+                                      start_date: Optional[str] = None,
+                                      end_date: Optional[str] = None,
+                                      min_amount: Optional[float] = None,
+                                      max_amount: Optional[float] = None,
+                                      start_hour: Optional[int] = None,
+                                      end_hour: Optional[int] = None,
+                                      source_type: Optional[str] = None,
+                                      limit: int = 50,
+                                      description: str = "") -> Dict[str, Any]:
+        """Complex multi-dimensional transaction filtering."""
+        transactions = await TransactionService.get_all_transactions(db, user_id)
+        
+        filtered = []
+        start_parsed = TransactionQueryService._parse_flexible_date(start_date) if start_date else None
+        end_parsed = TransactionQueryService._parse_flexible_date(end_date) if end_date else None
+        
+        for t in transactions:
+            if jar_name and t.jar != jar_name:
+                continue
+            if start_parsed and datetime.strptime(t.date, "%Y-%m-%d").date() < start_parsed:
+                continue
+            if end_parsed and datetime.strptime(t.date, "%Y-%m-%d").date() > end_parsed:
+                continue
+            if min_amount is not None and t.amount < min_amount:
+                continue
+            if max_amount is not None and t.amount > max_amount:
+                continue
+            if start_hour is not None and end_hour is not None and not TransactionQueryService._time_in_range(t.time, start_hour, end_hour):
+                continue
+            if source_type and t.source != source_type:
+                continue
+            filtered.append(t)
+        
+        filtered.sort(key=lambda t: t.date, reverse=True)
+        limited = filtered[:limit]
+        transaction_dicts = [t.dict() for t in limited]
+        
+        # Generate description
+        filter_parts = []
+        if jar_name:
+            filter_parts.append(jar_name)
+        if start_date:
+            filter_parts.append(f"from {start_date}")
+        if end_date:
+            filter_parts.append(f"to {end_date}")
+        if min_amount is not None:
+            filter_parts.append(f"min {min_amount}")
+        if max_amount is not None:
+            filter_parts.append(f"max {max_amount}")
+        if start_hour is not None:
+            filter_parts.append(f"start_hour {start_hour}")
+        if end_hour is not None:
+            filter_parts.append(f"end_hour {end_hour}")
+        if source_type:
+            filter_parts.append(source_type)
+        
+        final_desc = description or f"Filtered transactions: {', '.join(filter_parts)}" if filter_parts else "All transactions"
+        return {"data": transaction_dicts, "description": final_desc}
+
+    @staticmethod
+    def _parse_flexible_date(date_str: Optional[str]) -> date:
         if not date_str:
             return datetime.now().date()
         
@@ -262,158 +312,18 @@ class TransactionQueryService:
         if date_str in relative_dates:
             return relative_dates[date_str]
         
-        # Try parsing as YYYY-MM-DD
         try:
             return datetime.strptime(date_str, "%Y-%m-%d").date()
         except ValueError:
-            pass
-        
-        # Default to today
-        return today
+            return today
     
     @staticmethod
-    def time_in_range(transaction_time: str, start_hour: int, end_hour: int) -> bool:
-        """Check if transaction time falls within hour range."""
+    def _time_in_range(time_str: str, start_hour: int, end_hour: int) -> bool:
         try:
-            hour = int(transaction_time.split(":")[0])
-            
-            if start_hour <= end_hour:  # Normal range (e.g., 9-17)
+            hour = int(time_str.split(":")[0])
+            if start_hour <= end_hour:
                 return start_hour <= hour <= end_hour
-            else:  # Overnight range (e.g., 22-6)
+            else:
                 return hour >= start_hour or hour <= end_hour
         except (ValueError, IndexError):
             return False
-    
-    @staticmethod
-    async def get_complex_transaction(db: AsyncIOMotorDatabase, user_id: str,
-                                    jar_name: str = None,
-                                    start_date: str = None,
-                                    end_date: str = None,
-                                    min_amount: float = None,
-                                    max_amount: float = None,
-                                    start_hour: int = None,
-                                    end_hour: int = None,
-                                    source_type: str = None,
-                                    limit: int = 50,
-                                    description: str = "") -> Dict[str, Any]:
-        """Complex multi-dimensional transaction filtering with Vietnamese support."""
-        # Get all transactions
-        all_transactions = await db_utils.get_all_transactions_for_user(db, user_id)
-        
-        filtered = []
-        
-        # Apply all filters step by step
-        for transaction in all_transactions:
-            # 1. Check jar filter
-            if jar_name is not None:
-                jar_obj = await db_utils.get_jar_by_name(db, user_id, jar_name.lower().replace(' ', '_'))
-                if not jar_obj or transaction.jar != jar_obj.name:
-                    continue
-            
-            # 2. Check date range filter
-            if start_date is not None:
-                parsed_start = TransactionQueryService.parse_flexible_date(start_date)
-                parsed_end = TransactionQueryService.parse_flexible_date(end_date) if end_date else datetime.now().date()
-                
-                try:
-                    t_date = datetime.strptime(transaction.date, "%Y-%m-%d").date()
-                    if not (parsed_start <= t_date <= parsed_end):
-                        continue
-                except ValueError:
-                    continue
-            
-            # 3. Check amount range filter
-            amount = transaction.amount
-            if min_amount is not None and amount < min_amount:
-                continue
-            if max_amount is not None and amount > max_amount:
-                continue
-            
-            # 4. Check hour range filter
-            if start_hour is not None and end_hour is not None:
-                if not TransactionQueryService.time_in_range(transaction.time, start_hour, end_hour):
-                    continue
-            elif start_hour is not None:
-                try:
-                    hour = int(transaction.time.split(":")[0])
-                    if hour < start_hour:
-                        continue
-                except (ValueError, IndexError):
-                    continue
-            elif end_hour is not None:
-                try:
-                    hour = int(transaction.time.split(":")[0])
-                    if hour > end_hour:
-                        continue
-                except (ValueError, IndexError):
-                    continue
-            
-            # 5. Check source filter
-            if source_type is not None and transaction.source != source_type:
-                continue
-            
-            # If we get here, transaction passed all filters
-            filtered.append({
-                "amount": transaction.amount,
-                "jar": transaction.jar,
-                "description": transaction.description,
-                "date": transaction.date,
-                "time": transaction.time,
-                "source": transaction.source
-            })
-        
-        # Sort by date (newest first) and limit
-        filtered.sort(key=lambda t: t["date"], reverse=True)
-        limited_filtered = filtered[:limit]
-        
-        # Generate comprehensive description
-        if description.strip():
-            final_description = description.strip()
-        else:
-            filter_parts = []
-            
-            if jar_name:
-                filter_parts.append(f"{jar_name} transactions")
-            else:
-                filter_parts.append("all transactions")
-            
-            if start_date or end_date:
-                if start_date and end_date:
-                    filter_parts.append(f"from {start_date} to {end_date}")
-                elif start_date:
-                    filter_parts.append(f"from {start_date}")
-                elif end_date:
-                    filter_parts.append(f"until {end_date}")
-            
-            if min_amount is not None and max_amount is not None:
-                filter_parts.append(f"between ${min_amount}-${max_amount}")
-            elif min_amount is not None:
-                filter_parts.append(f"over ${min_amount}")
-            elif max_amount is not None:
-                filter_parts.append(f"under ${max_amount}")
-            
-            if start_hour is not None and end_hour is not None:
-                filter_parts.append(f"between {start_hour}:00-{end_hour}:00")
-            elif start_hour is not None:
-                filter_parts.append(f"after {start_hour}:00")
-            elif end_hour is not None:
-                filter_parts.append(f"before {end_hour}:00")
-            
-            if source_type:
-                source_names = {
-                    "vpbank_api": "bank data",
-                    "manual_input": "manual entries",
-                    "text_input": "voice input",
-                    "image_input": "scanned receipts"
-                }
-                filter_parts.append(f"from {source_names.get(source_type, source_type)}")
-            
-            final_description = "Complex filtering: " + " ".join(filter_parts)
-            
-            if limit < len(filtered):
-                final_description += f" (showing {limit} of {len(filtered)} matches)"
-        
-        return {
-            "data": limited_filtered,
-            "description": final_description
-        }

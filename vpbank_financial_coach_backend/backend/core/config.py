@@ -1,5 +1,6 @@
 import os
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
+from pydantic import Field, field_validator
 from dotenv import load_dotenv
 
 # Load environment variables from a .env file if it exists
@@ -22,7 +23,7 @@ class Settings(BaseSettings):
 
     # --- Agent/LLM Configuration ---
     # This is the Google API Key required by the orchestrator's main.py
-    GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY")
+    GOOGLE_API_KEY: str = Field(default="", description="Google API Key for Gemini models")
     
     # LLM Model Configuration
     MODEL_NAME: str = os.getenv("MODEL_NAME", "gemini-2.5-flash-lite-preview-06-17")
@@ -32,11 +33,27 @@ class Settings(BaseSettings):
     DEBUG: bool = os.getenv("DEBUG", "false").lower() in ("true", "1", "yes")
     VERBOSE_LOGGING: bool = os.getenv("VERBOSE_LOGGING", "false").lower() in ("true", "1", "yes")
     MAX_REACT_ITERATIONS: int = int(os.getenv("MAX_REACT_ITERATIONS", "5"))
+    
+    @field_validator('GOOGLE_API_KEY')
+    @classmethod
+    def validate_google_api_key(cls, v):
+        """Validate that Google API Key is provided when needed."""
+        # Only validate in production or when explicitly required
+        if not v and os.getenv("REQUIRE_GOOGLE_API_KEY", "false").lower() in ("true", "1", "yes"):
+            raise ValueError("GOOGLE_API_KEY is required when REQUIRE_GOOGLE_API_KEY is set")
+        return v
+    
+    def __init__(self, **kwargs):
+        # Load environment variables for this instance
+        super().__init__(**kwargs)
+        # Override with environment variables if not provided
+        if not self.GOOGLE_API_KEY:
+            self.GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
     # --- JWT Authentication ---
     # A strong, randomly generated secret key is crucial for security.
     # You can generate one using: openssl rand -hex 32
-    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "a_very_secret_key_that_should_be_changed")
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY")
     JWT_ALGORITHM: str = "HS256"
     # Token validity period in minutes
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days

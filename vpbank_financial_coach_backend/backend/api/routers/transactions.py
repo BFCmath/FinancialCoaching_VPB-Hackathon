@@ -4,19 +4,12 @@ from typing import List, Optional
 from datetime import date, time
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 
-# --- Path Setup ---
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
-sys.path.append(project_root)
-
 from backend.api import deps
 from backend.utils import db_utils
 from backend.models import user as user_model
 from backend.models import transaction as transaction_model
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-# Import original service for formatting functions if needed
-from backend.services.financial_services import TransactionService, JarManagementService, CalculationService
 
 router = APIRouter()
 
@@ -46,10 +39,8 @@ async def create_new_transaction(
         **transaction_in.model_dump(by_alias=True)
     )
     
-    # Insert the new transaction into the database
-    await db[db_utils.TRANSACTIONS_COLLECTION].insert_one(
-        transaction_to_save.model_dump(by_alias=True)
-    )
+    await db_utils.create_transaction_in_db(db, user_id, transaction_to_save)
+
 
     # 3. Update the jar's current balance
     new_current_amount = target_jar.current_amount + transaction_in.amount

@@ -37,7 +37,7 @@ async def register_new_user(
     new_user = await db_utils.create_user(db, user_in=user_in)
     
     # Return the public representation of the user
-    return user_model.UserPublic.from_orm(new_user)
+    return user_model.UserPublic.model_validate(new_user)
 
 
 @router.post("/token", response_model=token_model.Token)
@@ -77,4 +77,4 @@ async def read_users_me(
     Get the profile of the currently authenticated user.
     This is a protected endpoint used to verify that authentication is working.
     """
-    return user_model.UserPublic.from_orm(current_user)
+    return user_model.UserPublic.model_validate(current_user)

@@ -5,10 +5,42 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from backend.api import deps
 from backend.utils import db_utils
 from backend.models import user as user_model
-from vpbank_financial_coach_backend.backend.models import jar as jar_model
+from backend.models import jar as jar_model
 from backend.services.financial_services import JarManagementService
+from backend.services.service_responses import JarOperationResult, ServiceResult
 
 router = APIRouter()
+
+def _handle_service_result_error(result: ServiceResult) -> HTTPException:
+    """Convert service result errors to appropriate HTTP exceptions."""
+    error_code = result.get_error_code()
+    error_message = result.get_error_message()
+    
+    # Map service error codes to HTTP status codes
+    status_code_mapping = {
+        "NOT_FOUND": status.HTTP_404_NOT_FOUND,
+        "CONFLICT": status.HTTP_409_CONFLICT,
+        "VALIDATION_ERROR": status.HTTP_400_BAD_REQUEST,
+        "INVALID_PERCENTAGE": status.HTTP_400_BAD_REQUEST,
+        "INVALID_NAME": status.HTTP_400_BAD_REQUEST,
+        "ALLOCATION_EXCEEDED": status.HTTP_400_BAD_REQUEST,
+        "MISSING_REQUIRED_FIELDS": status.HTTP_400_BAD_REQUEST,
+        "PARAMETER_MISMATCH": status.HTTP_400_BAD_REQUEST,
+        "EMPTY_FIELD": status.HTTP_400_BAD_REQUEST,
+        "MISSING_ALLOCATION": status.HTTP_400_BAD_REQUEST,
+        "CONFLICTING_ALLOCATION": status.HTTP_400_BAD_REQUEST,
+    }
+    
+    http_status = status_code_mapping.get(error_code, status.HTTP_400_BAD_REQUEST)
+    
+    # If there are multiple errors, include them in the detail
+    if result.errors and len(result.errors) > 1:
+        error_details = [f"{err.message}" for err in result.errors]
+        detail = f"{error_message}. Details: {'; '.join(error_details)}"
+    else:
+        detail = error_message
+    
+    return HTTPException(status_code=http_status, detail=detail)
 
 @router.get("/", response_model=List[jar_model.JarInDB])
 async def list_user_jars(
@@ -51,12 +83,16 @@ async def create_jar(
         amount=[jar_in.amount] if jar_in.amount is not None else [None]
     )
     
+    # Handle service result
+    if result.is_error():
+        raise _handle_service_result_error(result)
+    
     # If creation was successful, return the created jar
-    if "✅" in result:
-        created_jar = await db_utils.get_jar_by_name(db, user_id, jar_in.name.lower().replace(' ', '_'))
-        return created_jar
-    else:
+    created_jar = await db_utils.get_jar_by_name(db, user_id, jar_in.name.lower().replace(' ', '_'))
+    if not created_jar:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=result
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Jar was created but could not be retrieved"
         )
+    
+    return created_jar

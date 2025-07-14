@@ -1,0 +1,22 @@
+# FastAPI
+fastapi
+uvicorn[standard]
+
+# Database
+motor  # Async MongoDB driver
+pydantic[email]  # For data validation and settings management
+
+# Authentication & Security
+python-jose[cryptography]  # For JWT creation and validation
+passlib[bcrypt]            # For hashing passwords
+
+# Agent & LLM
+langchain-google-genai
+langchain-core
+langchain
+
+# Environment variables
+python-dotenv
+
+# Utilities
+pytz # for timezone handling
