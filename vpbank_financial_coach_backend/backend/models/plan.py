@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
-
+from datetime import datetime
 # Define the allowed statuses for a plan, matching the original database.py
 PlanStatus = Literal["active", "completed", "paused"]
 
@@ -10,7 +10,7 @@ class BudgetPlanBase(BaseModel):
     """
     name: str = Field(..., min_length=3, max_length=200, example="Save for Vacation", description="The unique name for the budget plan.")
     detail_description: str = Field(..., max_length=5000, example="A plan to save $2000 for a trip to Japan next year.")
-    day_created: str = Field(..., example="2025-07-14", description="Creation date string (matches lab structure).")
+    day_created: datetime = Field(default_factory=datetime.utcnow, example="2025-07-14T14:30:00Z", description="Creation date and time of the plan.")
     status: PlanStatus = Field(default="active", example="active", description="The current status of the plan.")
     jar_recommendations: Optional[str] = Field(None, example="Suggest increasing 'long_term_savings' jar by 5%", description="Text or JSON string with recommendations for jar adjustments.")
 
@@ -39,3 +39,6 @@ class BudgetPlanInDB(BudgetPlanBase):
     class Config:
         orm_mode = True
         allow_population_by_field_name = True
+        json_encoders = {
+            datetime: lambda v: v.isoformat(),
+        }

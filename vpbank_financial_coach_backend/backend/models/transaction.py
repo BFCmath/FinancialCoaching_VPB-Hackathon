@@ -2,22 +2,17 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from datetime import datetime
 
-# Define the allowed sources for a transaction, matching the original database.py
 TransactionSource = Literal["vpbank_api", "manual_input", "text_input", "image_input"]
 
 class TransactionBase(BaseModel):
     """
-    Base model for a transaction, matching the lab database.py structure exactly.
+    Base model for a transaction with unified datetime handling.
     """
     amount: float = Field(..., gt=0, example=75.50, description="The transaction amount, must be positive.")
-    jar: str = Field(..., alias="jar", min_length=2, max_length=100, example="necessities", description="Reference to jar name (matches lab structure).")
+    jar: str = Field(..., alias="jar", min_length=2, max_length=100, example="necessities", description="Reference to jar name.")
     description: str = Field(..., max_length=1000, example="Grocery shopping at supermarket")
-    date: str = Field(..., example="2025-07-14", description="Date string (YYYY-MM-DD format) - matches lab structure.")
-    time: str = Field(..., example="14:30", description="Time string (HH:MM format) - matches lab structure.")
     source: TransactionSource = Field(..., example="manual_input", description="The source of the transaction entry.")
-    
-    # New datetime field for orchestrator compatibility
-    transaction_datetime: Optional[datetime] = Field(None, example="2025-07-14T14:30:00Z", description="Datetime field for better date handling (migration from date+time).")
+    transaction_datetime: datetime = Field(..., example="2025-07-14T14:30:00Z", description="The date and time of the transaction.")
 
 class TransactionCreate(TransactionBase):
     """

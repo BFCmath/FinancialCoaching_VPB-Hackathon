@@ -37,7 +37,6 @@ class UserInDB(UserBase):
         orm_mode = True
         allow_population_by_field_name = True
 
-
 class UserPublic(UserBase):
     """
     Model representing a user's public information.
@@ -52,17 +51,3 @@ class UserPublic(UserBase):
             # If we ever use ObjectId, this would be the place to encode it to a string
             # For now, we will store IDs as strings.
         }
-
-
-class Token(BaseModel):
-    """
-    Model for the JWT access token response.
-    """
-    access_token: str
-    token_type: str = "bearer"
-
-class TokenData(BaseModel):
-    """
-    Model for the data encoded within the JWT.
-    """
-    username: Optional[str] = None
