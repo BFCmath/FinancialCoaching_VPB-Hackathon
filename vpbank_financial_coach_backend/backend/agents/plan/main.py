@@ -10,6 +10,7 @@ import sys
 import os
 import traceback
 import json
+import inspect
 from typing import Dict, Any, List, Optional
 
 # Add parent directories to path
@@ -155,8 +156,11 @@ class BudgetAdvisorAgent:
                         continue
                     
                     try:
-                        tool_result = tool_func.ainvoke(tool_args)
-                        # tool_result = tool_func.invoke(tool_args)
+                        # Use ainvoke for async tools, invoke for sync tools
+                        if inspect.iscoroutinefunction(tool_func.func):
+                            tool_result = await tool_func.ainvoke(tool_args)
+                        else:
+                            tool_result = tool_func.invoke(tool_args)
                         
                         # Check if this is a terminating tool
                         if tool_name in TERMINATING_TOOLS.get(current_stage, []):

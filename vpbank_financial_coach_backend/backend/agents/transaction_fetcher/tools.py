@@ -18,26 +18,18 @@ from langchain_core.tools import tool
 from typing import List, Dict, Any, Optional
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-# Import service adapters
-from backend.services.adapters import TransactionFetcherAdapter
+# Import services directly
+from backend.services.transaction_service import TransactionQueryService
 
 class TransactionFetcherServiceContainer:
     """
     Request-scoped service container for transaction fetcher agent.
-    Provides clean dependency injection for tools.
+    Provides direct access to async services.
     """
     
     def __init__(self, db: AsyncIOMotorDatabase, user_id: str):
         self.db = db
         self.user_id = user_id
-        self._fetcher_adapter = None
-    
-    @property
-    def fetcher_adapter(self) -> TransactionFetcherAdapter:
-        """Lazy-loaded transaction fetcher adapter."""
-        if self._fetcher_adapter is None:
-            self._fetcher_adapter = TransactionFetcherAdapter(self.db, self.user_id)
-        return self._fetcher_adapter
 
 def get_all_transaction_tools(services: TransactionFetcherServiceContainer) -> List[tool]:
     """
@@ -51,7 +43,7 @@ def get_all_transaction_tools(services: TransactionFetcherServiceContainer) -> L
     """
 
     @tool
-    def get_jar_transactions(jar_name: Optional[str] = None, limit: int = 50, description: str = "") -> Dict[str, Any]:
+    async def get_jar_transactions(jar_name: Optional[str] = None, limit: int = 50, description: str = "") -> Dict[str, Any]:
         """
         Retrieve all transactions for a specific budget jar/category or all jars.
         
@@ -88,12 +80,12 @@ def get_all_transaction_tools(services: TransactionFetcherServiceContainer) -> L
             - "All my spending" → jar_name=None, description="all my transactions"
             - "Play transactions" → jar_name="play", description="play expenses"
         """
-        return services.fetcher_adapter.get_jar_transactions(
-            jar_name=jar_name, limit=limit, description=description
+        return await TransactionQueryService.get_jar_transactions(
+            services.db, services.user_id, jar_name=jar_name, limit=limit, description=description
         )
 
     @tool
-    def get_time_period_transactions(jar_name: Optional[str] = None, start_date: str = "last_month", end_date: Optional[str] = None, limit: int = 50, description: str = "") -> Dict[str, Any]:
+    async def get_time_period_transactions(jar_name: Optional[str] = None, start_date: str = "last_month", end_date: Optional[str] = None, limit: int = 50, description: str = "") -> Dict[str, Any]:
         """
         Retrieve transactions within a specific time period, optionally filtered by jar.
 
@@ -127,12 +119,12 @@ def get_all_transaction_tools(services: TransactionFetcherServiceContainer) -> L
             - "All spending this month" → jar_name=None, start_date="this_month"
             - "Play expenses from March 1st to March 15th" → jar_name="play", start_date="2024-03-01", end_date="2024-03-15"
         """
-        return services.fetcher_adapter.get_time_period_transactions(
-            jar_name=jar_name, start_date=start_date, end_date=end_date, limit=limit, description=description
+        return await TransactionQueryService.get_time_period_transactions(
+            services.db, services.user_id, jar_name=jar_name, start_date=start_date, end_date=end_date, limit=limit, description=description
         )
 
     @tool
-    def get_amount_range_transactions(jar_name: Optional[str] = None, min_amount: Optional[float] = None, max_amount: Optional[float] = None, limit: int = 50, description: str = "") -> Dict[str, Any]:
+    async def get_amount_range_transactions(jar_name: Optional[str] = None, min_amount: Optional[float] = None, max_amount: Optional[float] = None, limit: int = 50, description: str = "") -> Dict[str, Any]:
         """
         Retrieve transactions within a specific amount range, optionally filtered by jar.
 
@@ -166,12 +158,12 @@ def get_all_transaction_tools(services: TransactionFetcherServiceContainer) -> L
             - "Mid-range spending" → min_amount=20.0, max_amount=100.0
             - "All expensive purchases" → min_amount=200.0
         """
-        return services.fetcher_adapter.get_amount_range_transactions(
-            jar_name=jar_name, min_amount=min_amount, max_amount=max_amount, limit=limit, description=description
+        return await TransactionQueryService.get_amount_range_transactions(
+            services.db, services.user_id, jar_name=jar_name, min_amount=min_amount, max_amount=max_amount, limit=limit, description=description
         )
 
     @tool
-    def get_hour_range_transactions(jar_name: Optional[str] = None, start_hour: int = 6, end_hour: int = 22, limit: int = 50, description: str = "") -> Dict[str, Any]:
+    async def get_hour_range_transactions(jar_name: Optional[str] = None, start_hour: int = 6, end_hour: int = 22, limit: int = 50, description: str = "") -> Dict[str, Any]:
         """
         Retrieve transactions within a specific hour range, optionally filtered by jar.
         
@@ -205,12 +197,12 @@ def get_all_transaction_tools(services: TransactionFetcherServiceContainer) -> L
             - "Evening play activities" → jar_name="play", start_hour=18, end_hour=23
             - "Business hours spending" → start_hour=9, end_hour=17
         """
-        return services.fetcher_adapter.get_hour_range_transactions(
-            jar_name=jar_name, start_hour=start_hour, end_hour=end_hour, limit=limit, description=description
+        return await TransactionQueryService.get_hour_range_transactions(
+            services.db, services.user_id, jar_name=jar_name, start_hour=start_hour, end_hour=end_hour, limit=limit, description=description
         )
 
     @tool
-    def get_source_transactions(jar_name: Optional[str] = None, source_type: str = "vpbank_api", limit: int = 50, description: str = "") -> Dict[str, Any]:
+    async def get_source_transactions(jar_name: Optional[str] = None, source_type: str = "vpbank_api", limit: int = 50, description: str = "") -> Dict[str, Any]:
         """
         Retrieve transactions from a specific source, optionally filtered by jar.
         
@@ -243,12 +235,12 @@ def get_all_transaction_tools(services: TransactionFetcherServiceContainer) -> L
             - "Scanned receipts" → source_type="image_input"
             - "Voice input transactions" → source_type="text_input"
         """
-        return services.fetcher_adapter.get_source_transactions(
-            jar_name=jar_name, source_type=source_type, limit=limit, description=description
+        return await TransactionQueryService.get_source_transactions(
+            services.db, services.user_id, jar_name=jar_name, source_type=source_type, limit=limit, description=description
         )
 
     @tool
-    def get_complex_transaction(
+    async def get_complex_transaction(
         jar_name: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
@@ -335,8 +327,8 @@ def get_all_transaction_tools(services: TransactionFetcherServiceContainer) -> L
         3. "Morning necessity shopping under $100 from bank data"
         → jar_name="necessities", start_hour=6, end_hour=12, max_amount=100, source_type="vpbank_api", description="morning necessity shopping under $100 from bank"
         """
-        return services.fetcher_adapter.get_complex_transaction(
-            jar_name=jar_name, start_date=start_date, end_date=end_date,
+        return await TransactionQueryService.get_complex_transaction(
+            services.db, services.user_id, jar_name=jar_name, start_date=start_date, end_date=end_date,
             min_amount=min_amount, max_amount=max_amount, start_hour=start_hour,
             end_hour=end_hour, source_type=source_type, limit=limit, description=description
         )

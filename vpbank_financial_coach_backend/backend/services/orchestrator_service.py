@@ -68,16 +68,8 @@ class OrchestratorService:
             return True
             
         error_indicators = [
-            "❌ Error:",
-            "❌ An error occurred:",
-            "❌ Tool",
-            "❌ Unknown agent:",
-            "❌ Orchestrator error:",
-            "❌ I encountered an error",
-            "❌ This orchestrator requires async interface",
-            "Error: Database connection",
-            "Error: User ID",
-            "Error: The agent did not select a tool",
+            "❌",
+            "Error",
             "could not provide a complete answer within the allowed steps",
             "Agent loop completed without a final answer",
             "Failed to process"

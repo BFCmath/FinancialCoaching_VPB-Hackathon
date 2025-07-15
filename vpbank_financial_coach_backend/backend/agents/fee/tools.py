@@ -15,30 +15,22 @@ parent_dir = os.path.dirname(os.path.dirname(current_dir))
 sys.path.append(parent_dir)
 
 from langchain_core.tools import tool
-from typing import List, Optional, Dict
+from typing import List, Optional
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-# Import service adapters
-from backend.services.adapters import FeeAdapter
+# Import direct async services (no adapters)
+from backend.services.fee_service import FeeManagementService
 
 
 class FeeServiceContainer:
     """
     Request-scoped service container for fee agent.
-    Provides clean dependency injection for tools.
+    Provides direct access to async services.
     """
     
     def __init__(self, db: AsyncIOMotorDatabase, user_id: str):
         self.db = db
         self.user_id = user_id
-        self._fee_adapter = None
-    
-    @property
-    def fee_adapter(self) -> FeeAdapter:
-        """Lazy-loaded fee adapter."""
-        if self._fee_adapter is None:
-            self._fee_adapter = FeeAdapter(self.db, self.user_id)
-        return self._fee_adapter
 
 
 def get_all_fee_tools(services: FeeServiceContainer) -> List[tool]:
@@ -53,12 +45,12 @@ def get_all_fee_tools(services: FeeServiceContainer) -> List[tool]:
     """
     
     # Define which tools are considered "final actions" that end the ReAct loop
-    FINAL_ACTION_TOOLS = [
-        "create_recurring_fee",
-        "adjust_recurring_fee", 
-        "delete_recurring_fee",
-        "list_recurring_fees"
-    ]
+    # FINAL_ACTION_TOOLS = [
+    #     "create_recurring_fee",
+    #     "adjust_recurring_fee", 
+    #     "delete_recurring_fee",
+    #     "list_recurring_fees"
+    # ]
 
     # =============================================================================
     # CLARIFICATION AND FOLLOW-UP TOOLS
@@ -91,7 +83,7 @@ def get_all_fee_tools(services: FeeServiceContainer) -> List[tool]:
     # =============================================================================
 
     @tool
-    def create_recurring_fee(
+    async def create_recurring_fee(
         name: str,
         amount: float, 
         description: str, 
@@ -104,28 +96,23 @@ def get_all_fee_tools(services: FeeServiceContainer) -> List[tool]:
         FINAL ACTION: Creates a new recurring fee (subscription, bill, etc.).
         This is a terminal tool - use it when you have all required information.
         Agent should decide the fee name and target jar based on the context.
-
+        
         Args:
             name: Human-friendly name for the fee (Agent should generate this - short and concise)
             amount: Fee amount in dollars
             description: Detailed description of what this fee is for
             pattern_type: When fee occurs - "daily", "weekly", "monthly"
-            pattern_details: Pattern specifics (e.g., [1,15] for monthly on 1st and 15th)
+            pattern_details: For custom patterns, list of day numbers (e.g., [1,15] for monthly on 1st and 15th, [1,2,3] for weekly on Mon, Tue, Wed)
             target_jar: Which jar this fee should come from (Agent should reason based on the jar provided)
             confidence: Confidence in the decision (0-100)
         """
-        return services.fee_adapter.create_recurring_fee(
-            name=name,
-            amount=amount,
-            description=description,
-            pattern_type=pattern_type,
-            pattern_details=pattern_details,
-            target_jar=target_jar,
-            confidence=confidence
+        return await FeeManagementService.create_recurring_fee(
+            services.db, services.user_id, name, amount, description, 
+            pattern_type, pattern_details, target_jar, confidence
         )
 
     @tool
-    def adjust_recurring_fee(
+    async def adjust_recurring_fee(
         fee_name: str,
         new_amount: Optional[float] = None,
         new_description: Optional[str] = None,
@@ -148,19 +135,13 @@ def get_all_fee_tools(services: FeeServiceContainer) -> List[tool]:
             disable: Set to True to disable the fee
             confidence: LLM confidence (0-100)
         """
-        return services.fee_adapter.adjust_recurring_fee(
-            fee_name=fee_name,
-            new_amount=new_amount,
-            new_description=new_description,
-            new_pattern_type=new_pattern_type,
-            new_pattern_details=new_pattern_details,
-            new_target_jar=new_target_jar,
-            disable=disable,
-            confidence=confidence
+        return await FeeManagementService.adjust_recurring_fee(
+            services.db, services.user_id, fee_name, new_amount, new_description,
+            new_pattern_type, new_pattern_details, new_target_jar, disable, confidence
         )
 
     @tool
-    def delete_recurring_fee(fee_name: str, reason: str) -> str:
+    async def delete_recurring_fee(fee_name: str, reason: str) -> str:
         """
         FINAL ACTION: Deletes (deactivates) a recurring fee.
         
@@ -168,10 +149,11 @@ def get_all_fee_tools(services: FeeServiceContainer) -> List[tool]:
             fee_name: Name of fee to delete
             reason: Reason for deletion
         """
-        return services.fee_adapter.delete_recurring_fee(fee_name=fee_name, reason=reason)
+        return await FeeManagementService.delete_recurring_fee(services.db, services.user_id, fee_name, reason)
 
     @tool
-    def list_recurring_fees(active_only: bool = True, target_jar: Optional[str] = None) -> str:
+    @tool
+    async def list_recurring_fees(active_only: bool = True, target_jar: Optional[str] = None) -> str:
         """
         FINAL ACTION: Lists all recurring fees with optional filters.
         This is a terminal tool that provides information without needing clarification.
@@ -180,7 +162,7 @@ def get_all_fee_tools(services: FeeServiceContainer) -> List[tool]:
             active_only: Only show active fees if True
             target_jar: Optional jar name to filter by
         """
-        return services.fee_adapter.list_recurring_fees(active_only=active_only, target_jar=target_jar)
+        return await FeeManagementService.list_recurring_fees(services.db, services.user_id, active_only, target_jar)
 
     # =============================================================================
     # TOOL REGISTRATION

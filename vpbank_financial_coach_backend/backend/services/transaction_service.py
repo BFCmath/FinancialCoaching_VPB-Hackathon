@@ -32,11 +32,17 @@ class TransactionService:
     @staticmethod
     async def save_transaction(db: AsyncIOMotorDatabase, user_id: str, transaction_data: TransactionCreate) -> TransactionInDB:
         """Save transaction to database."""
+        # Validation can stay the same
         is_valid, errors = await TransactionService.validate_transaction_data(db, user_id, transaction_data)
         if not is_valid:
             raise ValueError(f"Invalid transaction data: {', '.join(errors)}")
         
-        return await db_utils.create_transaction_in_db(db, user_id, transaction_data)
+        # Prepare the dictionary correctly, just like in the API router
+        transaction_dict = transaction_data.model_dump()
+        transaction_dict['user_id'] = user_id
+        
+        # Call the database utility with the correct arguments
+        return await db_utils.create_transaction_in_db(db, transaction_dict)
     
     @staticmethod
     async def get_all_transactions(db: AsyncIOMotorDatabase, user_id: str) -> List[TransactionInDB]:
@@ -78,11 +84,11 @@ class TransactionService:
     
     @staticmethod
     async def add_money_to_jar_with_confidence(db: AsyncIOMotorDatabase, user_id: str,
-                                               amount: float, jar_name: str, confidence: int) -> str:
+                                            amount: float, jar_name: str, confidence: int, source: str) -> str:
         """Add money to jar with confidence-based formatting."""
         jar = await db_utils.get_jar_by_name(db, user_id, jar_name.lower().replace(' ', '_'))
         if not jar:
-            return "❌ Error: Jar '{jar_name}' not found"
+            return "❌ Error: Jar '{0}' not found".format(jar_name)
         
         transaction = TransactionCreate(
             amount=amount,
@@ -90,15 +96,19 @@ class TransactionService:
             description=f"Transaction classified to {jar.name}",
             date=datetime.now().strftime("%Y-%m-%d"),
             time=datetime.now().strftime("%H:%M"),
-            source="manual_input"
+            source=source
         )
         
+        # This call is now correct, passing the required user_id
         await TransactionService.save_transaction(db, user_id, transaction)
         
         # Update jar current amount
         new_current_amount = jar.current_amount + amount
         new_current_percent = await CalculationService.calculate_percent_from_amount(db, user_id, new_current_amount)
-        update_data = JarUpdate(current_amount=new_current_amount, current_percent=new_current_percent)
+        update_data = {
+            "current_amount": new_current_amount,
+            "current_percent": new_current_percent
+        }
         await db_utils.update_jar_in_db(db, user_id, jar.name, update_data)
         
         result = f"Added {CalculationService.format_currency(amount)} to {jar.name} jar"

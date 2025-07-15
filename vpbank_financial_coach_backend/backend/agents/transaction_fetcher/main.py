@@ -9,6 +9,7 @@ Pure data retrieval service with dependency injection for production-ready multi
 import sys
 import os
 import traceback
+import inspect
 from typing import Dict, Any, List, Optional
 
 # Add parent directories to path
@@ -82,8 +83,11 @@ class TransactionFetcher:
             for tool in self.tools:
                 if tool.name == tool_name:
                     tool_calls_made.append(f"{tool_name}(args={tool_args})")
-                    # Tools in this agent are synchronous but are called from an async context
-                    result = tool.invoke(tool_args)
+                    # Use ainvoke for async tools, invoke for sync tools
+                    if inspect.iscoroutinefunction(tool.func):
+                        result = await tool.ainvoke(tool_args)
+                    else:
+                        result = tool.invoke(tool_args)
                     return result, tool_calls_made, False
 
             return f"Error: Tool {tool_name} not found.", tool_calls_made, False

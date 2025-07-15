@@ -10,6 +10,7 @@ ORCHESTRATOR INTERFACE:
 """
 
 import asyncio
+import concurrent.futures
 from typing import List, Dict, Any
 
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -42,13 +43,14 @@ class ReActClassifierAgent:
         )
         
         # Create service container for dependency injection
-        if db is not None and user_id is not None:
-            self.services = ClassifierServiceContainer(db, user_id)
-            self.tools = get_all_classifier_tools(self.services)
-        else:
+        if db is None and user_id is None:
             # Fallback for cases without database context (testing/development)
             self.services = None
             self.tools = []  # Empty tools list for non-production use
+        else:
+            self.services = ClassifierServiceContainer(db, user_id)
+            self.tools = get_all_classifier_tools(self.services)
+            
             
         self.llm_with_tools = self.llm.bind_tools(self.tools)
 
@@ -83,7 +85,7 @@ class ReActClassifierAgent:
         final_response = "Error: Agent loop completed without a final answer."
         try:
             # Build prompt with database context if available
-            if self.db and self.user_id:
+            if self.db is not None and self.user_id is not None:
                 system_prompt = await build_react_classifier_prompt(user_query, conversation_history, self.db, self.user_id)
             else:
                 # Fallback for cases without database context
@@ -112,7 +114,7 @@ Assistant:
                 if config.debug_mode:
                     print(f"🔄 ReAct Iteration {iteration + 1}/{config.max_react_iterations}")
 
-                response = self.llm_with_tools.invoke(messages)
+                response = await self.llm_with_tools.ainvoke(messages)
                 messages.append(AIMessage(content=str(response.content), tool_calls=response.tool_calls))
 
                 if not response.tool_calls:
@@ -139,7 +141,7 @@ Assistant:
                         continue
 
                     try:
-                        result = tool_func.invoke(tool_args)
+                        result = await tool_func.ainvoke(tool_args)
                         
                         # If "respond" for clarification, set follow-up
                         if tool_name == "respond":
@@ -168,9 +170,8 @@ Assistant:
             return final_response, tool_calls_made, False
 
         except Exception as e:
-            if config.debug_mode:
-                import traceback
-                traceback.print_exc()
+            import traceback
+            traceback.print_exc()
             final_response = f"❌ An error occurred: {e}"
             return final_response, tool_calls_made, False
 

@@ -13,6 +13,7 @@ ORCHESTRATOR INTERFACE:
 import sys
 import os
 import traceback
+import inspect
 import asyncio
 import concurrent.futures
 from typing import Dict, Any, List, Optional
@@ -92,7 +93,7 @@ class JarManager:
             )
             
             # Get LLM's tool decision
-            response = self.llm_with_tools.invoke([
+            response = await self.llm_with_tools.ainvoke([
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_query)
             ])
@@ -110,11 +111,14 @@ class JarManager:
             if config.debug_mode:
                 print(f"🛠️ Using tool: {tool_name}")
 
-            # Find and execute tool
+            # Find and execute tool async
             for tool in self.tools:
                 if tool.name == tool_name:
                     tool_calls_made.append(f"{tool_name}(args={tool_args})")
-                    result = tool.invoke(tool_args)
+                    if inspect.iscoroutinefunction(tool.func):
+                        result = await tool.ainvoke(tool_args)
+                    else:
+                        result = tool.invoke(tool_args)
                     
                     # If clarification needed, return result and set follow-up flag
                     if tool_name == "request_clarification":

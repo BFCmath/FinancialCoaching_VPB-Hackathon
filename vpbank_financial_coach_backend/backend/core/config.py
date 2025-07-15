@@ -30,8 +30,8 @@ class Settings(BaseSettings):
     LLM_TEMPERATURE: float = float(os.getenv("LLM_TEMPERATURE", "0.1"))
     
     # Agent Configuration
-    DEBUG: bool = os.getenv("DEBUG", "false").lower() in ("true", "1", "yes")
-    VERBOSE_LOGGING: bool = os.getenv("VERBOSE_LOGGING", "false").lower() in ("true", "1", "yes")
+    DEBUG: bool = os.getenv("DEBUG", "true").lower() in ("false", "0", "no")
+    VERBOSE_LOGGING: bool = os.getenv("VERBOSE_LOGGING", "true").lower() in ("false", "0", "no")
     MAX_REACT_ITERATIONS: int = int(os.getenv("MAX_REACT_ITERATIONS", "5"))
     
     @field_validator('GOOGLE_API_KEY')

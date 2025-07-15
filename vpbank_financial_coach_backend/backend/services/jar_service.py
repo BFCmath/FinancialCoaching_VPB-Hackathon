@@ -161,7 +161,7 @@ class JarManagementService:
                 jar_names=newly_created_names,
                 rebalance_info=rebalance_msg if rebalance_msg else None
             )
-    
+
     @staticmethod
     async def update_jar(db: AsyncIOMotorDatabase, user_id: str,
                          jar_name: List[str], new_name: List[Optional[str]] = None, 
@@ -329,6 +329,41 @@ class JarManagementService:
                 data={"deleted_jars": [jar.name for jar in jars_to_delete], "reason": reason},
                 warnings=[rebalance_msg] if rebalance_msg else None
             )
+            
+    @staticmethod
+    async def get_jars(db: AsyncIOMotorDatabase, user_id: str, jar_name: Optional[str] = None, description: str = "") -> Dict[str, Any]:
+        """
+        Gets a specific jar or all jars, returning a structured dictionary.
+
+        Args:
+            jar_name: The name of the jar. If None, all jars are returned.
+            description: A user-provided description for the query's purpose.
+        
+        Returns:
+            A dictionary containing the list of jars and a descriptive summary.
+        """
+        if jar_name:
+            # Case 1: Fetch a single jar
+            jar = await db_utils.get_jar_by_name(db, user_id, jar_name)
+            
+            if jar:
+                jar_list = [jar]
+                auto_desc = f"Successfully retrieved details for the '{jar.name}' jar."
+            else:
+                jar_list = []
+                auto_desc = f"Could not find a jar with the name '{jar_name}'."
+        else:
+            # Case 2: Fetch all jars
+            jar_list = await db_utils.get_all_jars_for_user(db, user_id)
+            auto_desc = f"Successfully retrieved all {len(jar_list)} jars."
+
+        # Convert the Pydantic objects to dictionaries for the final output
+        jar_dicts = [j.model_dump() for j in jar_list]
+        
+        # Use the user's description if provided, otherwise use the auto-generated one
+        final_desc = description or auto_desc
+        
+        return {"data": jar_dicts, "description": final_desc}
 
     @staticmethod
     async def list_jars(db: AsyncIOMotorDatabase, user_id: str) -> str:

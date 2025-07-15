@@ -1,23 +1,45 @@
-# Transaction Fetcher Agent
+# Transaction Fetcher Agent - ASYNC MIGRATED ✅
 
-## Overview
+## Status: FULLY ASYNC CONVERTED
 
-The Transaction Fetcher Agent is a specialized, stateless data retrieval service for transaction history. It intelligently selects and executes filtering tools based on query complexity, returning raw transaction data without analysis or interpretation. This agent serves as a backend for other agents (e.g., Transaction Classifier, Plan Agent) and supports natural language queries, including Vietnamese.
+### ✅ Async Migration Complete
+- **Main.py**: ✅ Uses `inspect.iscoroutinefunction()` for tool execution
+- **Tools.py**: ✅ All 6 tools are fully async
+- **Service Integration**: ✅ Uses `TransactionQueryService` directly
+- **Error Handling**: ✅ Proper async error handling
 
-It uses a direct flow: Analyze query → Select one tool → Execute via service layer → Return data.
+### Tools Status (6/6 async):
+1. ✅ `get_jar_transactions` - async
+2. ✅ `get_time_period_transactions` - async  
+3. ✅ `get_amount_range_transactions` - async
+4. ✅ `get_hour_range_transactions` - async
+5. ✅ `get_source_transactions` - async
+6. ✅ `get_complex_transaction` - async
 
-## Core Features
+### Service Dependencies:
+- ✅ **TransactionQueryService**: All methods are async and signatures match
+- ✅ **Direct service calls**: No adapter layer used
 
-- **Intelligent Tool Selection**: Analyzes query complexity (simple 1-2 filters vs. complex 3+ filters) to choose the right tool.
-- **Multi-Filter Support**: Handles jar, date, amount, time-of-day, and source filters.
-- **Stateless Design**: No conversation lock or follow-up—pure retrieval per query.
-- **Vietnamese Support**: Translates complex queries (e.g., "cho tôi xem thông tin ăn trưa dưới 20 đô" → lunch under $20).
-- **Data Integrity**: Returns structured dicts with transactions + description; limits results (default 50) for efficiency.
+### Return Types: 
+- ✅ All tools return `Dict[str, Any]` with standardized format:
+  ```python
+  {
+      "data": List[transaction_dicts],
+      "description": str
+  }
+  ```
 
-## Execution Flow
+### Key Changes Made:
+1. Added `inspect` import in main.py
+2. Updated tool execution with `inspect.iscoroutinefunction()` check
+3. All tools converted to `async def`
+4. All service calls use `await TransactionQueryService.method()`
+5. Removed adapter pattern, using direct service calls
 
-1. **Receive Task**: Orchestrator/other agents call with a natural language query (e.g., "show me groceries last month under $50").
-2. **Build Prompt**: Includes query + available jars (fetched fresh).
+### Integration Notes:
+- Used by Plan Agent via `AgentCommunicationService.call_transaction_fetcher()`
+- Used by Orchestrator via `TransactionFetcherInterface`
+- Service container provides `services.db` and `services.user_id`
 3. **LLM Invocation**: Bound to 6 tools; LLM selects one based on prompt rules.
 4. **Tool Execution**: Calls service layer (e.g., `get_complex_transaction` for multi-filters).
 5. **Return Result**: Dict with data (list of transactions) + description; logs to history.

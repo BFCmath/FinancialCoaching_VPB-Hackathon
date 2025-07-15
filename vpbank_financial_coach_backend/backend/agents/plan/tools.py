@@ -18,34 +18,20 @@ from langchain_core.tools import tool
 from typing import Optional, Dict, Any, List
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-# Import service adapters
-from backend.services.adapters import PlanAdapter, JarAdapter
+# Import services directly
+from backend.services.plan_service import PlanManagementService
+from backend.services.jar_service import JarManagementService
+from backend.services.communication_service import AgentCommunicationService
 
 class PlanServiceContainer:
     """
     Request-scoped service container for plan agent.
-    Provides clean dependency injection for tools.
+    Provides direct access to async services.
     """
     
     def __init__(self, db: AsyncIOMotorDatabase, user_id: str):
         self.db = db
         self.user_id = user_id
-        self._plan_adapter = None
-        self._jar_adapter = None
-    
-    @property
-    def plan_adapter(self) -> PlanAdapter:
-        """Lazy-loaded plan adapter."""
-        if self._plan_adapter is None:
-            self._plan_adapter = PlanAdapter(self.db, self.user_id)
-        return self._plan_adapter
-    
-    @property
-    def jar_adapter(self) -> JarAdapter:
-        """Lazy-loaded jar adapter for jar operations."""
-        if self._jar_adapter is None:
-            self._jar_adapter = JarAdapter(self.db, self.user_id)
-        return self._jar_adapter
 
 
 def get_stage1_tools(services: PlanServiceContainer) -> List[tool]:
@@ -54,7 +40,7 @@ def get_stage1_tools(services: PlanServiceContainer) -> List[tool]:
     """
     
     @tool
-    def transaction_fetcher(user_query: str, description: str) -> Dict[str, Any]:
+    async def transaction_fetcher(user_query: str, description: str) -> Dict[str, Any]:
         """
         Calls the Transaction Fetcher agent to retrieve user spending data for analysis.
         This is the primary tool for understanding a user's financial habits and history.
@@ -70,13 +56,12 @@ def get_stage1_tools(services: PlanServiceContainer) -> List[tool]:
         Returns:
             A dictionary containing the fetched transaction data and a summary.
         """
-        return services.plan_adapter.call_transaction_fetcher(
-            user_query=user_query,
-            description=description
+        return await AgentCommunicationService.call_transaction_fetcher(
+            services.db, services.user_id, user_query=user_query, description=description
         )
 
     @tool
-    def get_jar(jar_name: Optional[str] = None, description: str = "") -> Dict[str, Any]:
+    async def get_jar(jar_name: Optional[str] = None, description: str = "") -> Dict[str, Any]:
         """
         Retrieves the user's current budget jar allocations and balances directly from the database.
         Returns all jars if no name is provided. You MUST use this tool to see the user's budget structure before creating or adjusting plans.
@@ -85,40 +70,17 @@ def get_stage1_tools(services: PlanServiceContainer) -> List[tool]:
         Args:
             jar_name: The specific name of a jar to query. Example: "Savings", "Necessities".
                     If not provided, all jars are returned.
-            description: A brief explanation of why you need this jar information.
-                        Example: "To check the current balance of the 'Play' jar before making a recommendation."
-
+            description: A brief explanation for the query. Example: "Checking current jar allocations for planning."
+        
         Returns:
-            A dictionary containing a list of jar data, the total income, and a summary.
+            A dictionary containing the jar details, including balances and allocations.
         """
-        try:
-            # Get jar information using jar adapter
-            jar_result = services.jar_adapter.list_jars()
-            
-            # Parse the jar information (assuming it returns formatted string)
-            if "No jars found" in jar_result:
-                return {
-                    "data": [],
-                    "total_income": 0,
-                    "description": description or "no jars configured"
-                }
-            
-            # For now, return basic structure - this would need real jar parsing logic
-            return {
-                "data": jar_result,
-                "total_income": 0,  # This would need to be fetched from user profile
-                "description": description or f"jar spending data{'for ' + jar_name if jar_name else ''}"
-            }
-            
-        except Exception as e:
-            return {
-                "data": [],
-                "total_income": 0,
-                "description": f"Error fetching jar data: {str(e)}"
-            }
+        return await JarManagementService.get_jars(
+            services.db, services.user_id, jar_name=jar_name, description=description
+        )
 
     @tool
-    def get_plan(status: str = "active", description: str = "") -> Dict[str, Any]:
+    async def get_plan(status: str = "active", description: str = "") -> Dict[str, Any]:
         """
         Retrieves existing budget plans from the Plan Service, filtered by their status.
         Use this to understand the user's existing financial goals.
@@ -134,7 +96,9 @@ def get_stage1_tools(services: PlanServiceContainer) -> List[tool]:
         Returns:
             A dictionary containing a list of plans and a summary.
         """
-        return services.plan_adapter.get_plan(status=status, description=description)
+        return await PlanManagementService.get_plan(
+            services.db, services.user_id, status=status, description=description
+        )
 
     @tool
     def request_clarification(question: str, suggestion: Optional[str] = None) -> Dict[str, Any]:
@@ -178,7 +142,7 @@ def get_stage2_tools(services: PlanServiceContainer) -> List[tool]:
     Stage 2 tools: Plan refinement.
     """
     @tool
-    def transaction_fetcher(user_query: str, description: str) -> Dict[str, Any]:
+    async def transaction_fetcher(user_query: str, description: str) -> Dict[str, Any]:
         """
         Calls the Transaction Fetcher agent to retrieve user spending data for analysis.
         This is the primary tool for understanding a user's financial habits and history.
@@ -194,13 +158,12 @@ def get_stage2_tools(services: PlanServiceContainer) -> List[tool]:
         Returns:
             A dictionary containing the fetched transaction data and a summary.
         """
-        return services.plan_adapter.call_transaction_fetcher(
-            user_query=user_query,
-            description=description
+        return await AgentCommunicationService.call_transaction_fetcher(
+            services.db, services.user_id, user_query=user_query, description=description
         )
 
     @tool
-    def get_jar(jar_name: Optional[str] = None, description: str = "") -> Dict[str, Any]:
+    async def get_jar(jar_name: Optional[str] = None) -> Dict[str, Any]:
         """
         Retrieves the user's current budget jar allocations and balances directly from the database.
         Returns all jars if no name is provided. You MUST use this tool to see the user's budget structure before creating or adjusting plans.
@@ -209,40 +172,13 @@ def get_stage2_tools(services: PlanServiceContainer) -> List[tool]:
         Args:
             jar_name: The specific name of a jar to query. Example: "Savings", "Necessities".
                     If not provided, all jars are returned.
-            description: A brief explanation of why you need this jar information.
-                        Example: "To check the current balance of the 'Play' jar before making a recommendation."
-
-        Returns:
-            A dictionary containing a list of jar data, the total income, and a summary.
         """
-        try:
-            # Get jar information using jar adapter
-            jar_result = services.jar_adapter.list_jars()
-            
-            # Parse the jar information (assuming it returns formatted string)
-            if "No jars found" in jar_result:
-                return {
-                    "data": [],
-                    "total_income": 0,
-                    "description": description or "no jars configured"
-                }
-            
-            # For now, return basic structure - this would need real jar parsing logic
-            return {
-                "data": jar_result,
-                "total_income": 0,  # This would need to be fetched from user profile
-                "description": description or f"jar spending data{'for ' + jar_name if jar_name else ''}"
-            }
-            
-        except Exception as e:
-            return {
-                "data": [],
-                "total_income": 0,
-                "description": f"Error fetching jar data: {str(e)}"
-            }
+        return await JarManagementService.get_jars(
+            services.db, services.user_id, jar_name=jar_name
+        )
 
     @tool
-    def get_plan(status: str = "active", description: str = "") -> Dict[str, Any]:
+    async def get_plan(status: str = "active", description: str = "") -> Dict[str, Any]:
         """
         Retrieves existing budget plans from the Plan Service, filtered by their status.
         Use this to understand the user's existing financial goals.
@@ -258,7 +194,9 @@ def get_stage2_tools(services: PlanServiceContainer) -> List[tool]:
         Returns:
             A dictionary containing a list of plans and a summary.
         """
-        return services.plan_adapter.get_plan(status=status, description=description)
+        return await PlanManagementService.get_plan(
+            services.db, services.user_id, status=status, description=description
+        )
 
     @tool
     def propose_plan(financial_plan: str, jar_changes: str) -> Dict[str, Any]:
@@ -283,7 +221,7 @@ def get_stage3_tools(services: PlanServiceContainer) -> List[tool]:
     """
     
     @tool
-    def create_plan(name: str, description: str, jar_changes: Optional[str] = None) -> Dict[str, Any]:
+    async def create_plan(name: str, description: str, jar_changes: Optional[str] = None) -> Dict[str, Any]:
         """
         Creates a new budget plan, this should be used after the user have accepted the proposed plan and jar changes.
         Use this to establish a new financial goal, such as saving for a vacation or paying off debt.
@@ -296,7 +234,8 @@ def get_stage3_tools(services: PlanServiceContainer) -> List[tool]:
         Returns:
             A standardized dictionary with a success message, the plan details, and state flags for the orchestrator.
         """
-        result = services.plan_adapter.create_plan(
+        result = await PlanManagementService.create_plan(
+            services.db, services.user_id, 
             name=name,
             description=description,
             status="active",
@@ -312,7 +251,7 @@ def get_stage3_tools(services: PlanServiceContainer) -> List[tool]:
         }
 
     @tool
-    def adjust_plan(name: str,  description: str, jar_changes: str, status: Optional[str] = "active") -> Dict[str, Any]:
+    async def adjust_plan(name: str,  description: str, jar_changes: str, status: Optional[str] = "active") -> Dict[str, Any]:
         """
         Modifies an existing budget plan, this should be used when the user wants to update an existing plan or change jar allocations.
         This is useful for adjusting goals based on new financial data or user feedback.
@@ -327,7 +266,8 @@ def get_stage3_tools(services: PlanServiceContainer) -> List[tool]:
         Returns:
             A standardized dictionary with a success message, the plan details, and state flags for the orchestrator.
         """
-        result = services.plan_adapter.adjust_plan(
+        result = await PlanManagementService.adjust_plan(
+            services.db, services.user_id,
             name=name,
             description=description,
             status=status,

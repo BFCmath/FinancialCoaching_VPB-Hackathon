@@ -23,27 +23,19 @@ from langchain_core.tools import tool
 from langchain_community.tools import DuckDuckGoSearchRun
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-# Import service adapters
-from backend.services.adapters import KnowledgeAdapter
+# Import direct async services (no adapters)
+from backend.services.knowledge_service import KnowledgeService
 
 
 class KnowledgeServiceContainer:
     """
     Request-scoped service container for knowledge agent.
-    Provides clean dependency injection for tools.
+    Provides direct access to async services.
     """
     
     def __init__(self, db: AsyncIOMotorDatabase, user_id: str):
         self.db = db
         self.user_id = user_id
-        self._knowledge_adapter = None
-    
-    @property
-    def knowledge_adapter(self) -> KnowledgeAdapter:
-        """Lazy-loaded knowledge adapter."""
-        if self._knowledge_adapter is None:
-            self._knowledge_adapter = KnowledgeAdapter(self.db, self.user_id)
-        return self._knowledge_adapter
 
 
 def get_all_knowledge_tools(services: KnowledgeServiceContainer) -> List[tool]:
@@ -103,7 +95,7 @@ def get_all_knowledge_tools(services: KnowledgeServiceContainer) -> List[tool]:
             }
 
     @tool
-    def get_application_information(description: str = "") -> Dict[str, Any]:
+    async def get_application_information(description: str = "") -> Dict[str, Any]:
         """
         Get complete information about the personal finance app and all its features.
         Returns all app documentation in one call.
@@ -118,8 +110,7 @@ def get_all_knowledge_tools(services: KnowledgeServiceContainer) -> List[tool]:
             get_application_information("need jar system info")
             get_application_information("want to know about budget features")
         """
-        
-        return services.knowledge_adapter.get_application_information(description=description)
+        return await KnowledgeService.get_application_information(services.db, services.user_id, description)
 
     @tool  
     def respond(answer: str, description: str = "") -> Dict[str, Any]:
@@ -139,8 +130,7 @@ def get_all_knowledge_tools(services: KnowledgeServiceContainer) -> List[tool]:
             respond("Compound interest is...")
             respond("The jar system works by...")
         """
-        
-        return services.knowledge_adapter.respond(answer=answer, description=description)
+        return KnowledgeService.respond(answer, description)
 
     # Return all tools for LLM binding
     return [

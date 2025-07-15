@@ -1,6 +1,15 @@
 # Transaction Classifier Agent 🏷️
 
+**Status**: ✅ ASYNC MIGRATION COMPLETED
+
 A ReAct-based intelligent transaction classifier that categorizes user expenses into appropriate budget jars using proactive information gathering and confidence-based decision making.
+
+## Async Migration Status
+- ✅ 2 async tools use direct service calls (transaction_fetcher, add_money_to_jar_with_confidence)
+- ✅ 2 sync tools appropriately remain sync (report_no_suitable_jar, respond - return strings/dicts only)
+- ✅ ReAct framework properly handles async tool execution
+- ✅ Direct TransactionService integration for jar operations
+- ✅ AgentCommunicationService for cross-agent calls
 
 ## Overview
 

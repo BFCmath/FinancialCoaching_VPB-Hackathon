@@ -22,27 +22,20 @@ from langchain_core.tools import tool
 from typing import List, Dict, Any
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-# Import service adapters
-from backend.services.adapters import ClassifierAdapter
+# Import direct async services (no adapters)
+from backend.services.transaction_service import TransactionService
+from backend.services.communication_service import AgentCommunicationService
 
 
 class ClassifierServiceContainer:
     """
     Request-scoped service container for classifier agent.
-    Provides clean dependency injection for tools.
+    Provides direct access to async services.
     """
     
     def __init__(self, db: AsyncIOMotorDatabase, user_id: str):
         self.db = db
         self.user_id = user_id
-        self._classifier_adapter = None
-    
-    @property
-    def classifier_adapter(self) -> ClassifierAdapter:
-        """Lazy-loaded classifier adapter."""
-        if self._classifier_adapter is None:
-            self._classifier_adapter = ClassifierAdapter(self.db, self.user_id)
-        return self._classifier_adapter
 
 
 def get_all_classifier_tools(services: ClassifierServiceContainer) -> List[tool]:
@@ -61,7 +54,7 @@ def get_all_classifier_tools(services: ClassifierServiceContainer) -> List[tool]
     # =============================================================================
 
     @tool
-    def transaction_fetcher(user_query: str, description: str) -> Dict[str, Any]:
+    async def transaction_fetcher(user_query: str, description: str) -> Dict[str, Any]:
         """
         Gathers historical data about transactions to handle ambiguous user inputs.
 
@@ -81,9 +74,8 @@ def get_all_classifier_tools(services: ClassifierServiceContainer) -> List[tool]
             A dictionary containing a list of past transactions that match the query.
             This data can then be used to infer missing details in your reasoning process.
         """
-        return services.classifier_adapter.call_transaction_fetcher(
-            user_query=user_query,
-            description=description
+        return await AgentCommunicationService.call_transaction_fetcher(
+            services.db, services.user_id, user_query, description
         )
 
     # =============================================================================
@@ -91,7 +83,7 @@ def get_all_classifier_tools(services: ClassifierServiceContainer) -> List[tool]
     # =============================================================================
 
     @tool
-    def add_money_to_jar_with_confidence(amount: float, jar_name: str, confidence: int) -> str:
+    async def add_money_to_jar_with_confidence(amount: float, jar_name: str, confidence: int) -> str:
         """
         FINAL ACTION: Classifies a transaction by adding a specific amount to a budget jar.
 
@@ -109,10 +101,8 @@ def get_all_classifier_tools(services: ClassifierServiceContainer) -> List[tool]
         Returns:
             A success message confirming the transaction has been logged.
         """
-        return services.classifier_adapter.add_money_to_jar_with_confidence(
-            amount=amount,
-            jar_name=jar_name,
-            confidence=confidence
+        return await TransactionService.add_money_to_jar_with_confidence(
+            services.db, services.user_id, amount, jar_name, confidence, source="text_input"
         )
 
     @tool
@@ -133,10 +123,7 @@ def get_all_classifier_tools(services: ClassifierServiceContainer) -> List[tool]
         Returns:
             A message explaining that no suitable jar was found, including the suggestion.
         """
-        return services.classifier_adapter.report_no_suitable_jar(
-            description=description,
-            suggestion=suggestion
-        )
+        return TransactionService.report_no_suitable_jar(description, suggestion)
 
     @tool
     def respond(pattern_found: str, confirm_question: str) -> str:

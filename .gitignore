@@ -10,3 +10,5 @@ docs/
 .env.test.local
 .env.production.local
 */cursor_docs/*
+*.pem
+*.pem.pub

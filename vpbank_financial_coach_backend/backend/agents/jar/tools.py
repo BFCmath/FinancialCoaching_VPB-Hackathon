@@ -16,32 +16,22 @@ sys.path.append(parent_dir)
 
 import json
 from langchain_core.tools import tool
-from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import List, Optional, Dict
+from typing import List, Optional
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-# Import service adapters
-from backend.services.adapters import JarAdapter
+# Import direct async services (no adapters)
+from backend.services.jar_service import JarManagementService
 
 
 class JarServiceContainer:
     """
     Request-scoped service container for jar agent.
-    Provides clean dependency injection for tools.
+    Provides direct access to async services.
     """
     
     def __init__(self, db: AsyncIOMotorDatabase, user_id: str):
         self.db = db
         self.user_id = user_id
-        self._jar_adapter = None
-    
-    @property
-    def jar_adapter(self) -> JarAdapter:
-        """Lazy-loaded jar adapter."""
-        if self._jar_adapter is None:
-            self._jar_adapter = JarAdapter(self.db, self.user_id)
-        return self._jar_adapter
 
 
 def get_all_jar_tools(services: JarServiceContainer) -> List[tool]:
@@ -60,7 +50,7 @@ def get_all_jar_tools(services: JarServiceContainer) -> List[tool]:
     # =============================================================================
 
     @tool
-    def create_jar(
+    async def create_jar(
         name: List[str],
         description: List[str],
         percent: List[Optional[float]] = None,
@@ -80,7 +70,8 @@ def get_all_jar_tools(services: JarServiceContainer) -> List[tool]:
         Note: For each jar, provide either percent OR amount, not both.
         All lists must have the same length.
         """
-        return services.jar_adapter.create_jar(
+        jar_service = JarManagementService(services.db, services.user_id)
+        return await jar_service.create_jar(
             name=name,
             description=description,
             percent=percent,
@@ -89,7 +80,7 @@ def get_all_jar_tools(services: JarServiceContainer) -> List[tool]:
         )
 
     @tool
-    def update_jar(
+    async def update_jar(
         jar_name: List[str],
         new_name: List[Optional[str]] = None,
         new_description: List[Optional[str]] = None,
@@ -110,7 +101,8 @@ def get_all_jar_tools(services: JarServiceContainer) -> List[tool]:
         Note: All lists must have the same length as jar_name.
         For each jar, provide either new_percent OR new_amount, not both.
         """
-        return services.jar_adapter.update_jar(
+        jar_service = JarManagementService(services.db, services.user_id)
+        return await jar_service.update_jar(
             jar_name=jar_name,
             new_name=new_name,
             new_description=new_description,
@@ -120,22 +112,24 @@ def get_all_jar_tools(services: JarServiceContainer) -> List[tool]:
         )
 
     @tool
-    def delete_jar(jar_name: List[str], reason: str) -> str:
+    async def delete_jar(jar_name: List[str], reason: str) -> str:
         """Delete (remove) one or multiple jars permanently and redistribute their percentages to remaining jars.
         
         Args:
             jar_name: List of jar names to delete
             reason: Reason for deletion
         """
-        return services.jar_adapter.delete_jar(jar_name=jar_name, reason=reason)
+        jar_service = JarManagementService(services.db, services.user_id)
+        return await jar_service.delete_jar(jar_name=jar_name, reason=reason)
 
     @tool
-    def list_jars() -> str:
+    async def list_jars() -> str:
         """List all budget jars with their current balances, budgets, and percentages."""
-        return services.jar_adapter.list_jars()
+        jar_service = JarManagementService(services.db, services.user_id)
+        return await jar_service.list_jars()
 
     @tool
-    def request_clarification(question: str, suggestions: Optional[str] = None) -> str:
+    async def request_clarification(question: str, suggestions: Optional[str] = None) -> str:
         """
         Ask user for clarification when input is unclear.
         Stop asking when you have:

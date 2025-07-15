@@ -9,6 +9,7 @@ for production-ready multi-user support.
 import os
 import sys
 import traceback
+import inspect
 from typing import List, Optional, Dict, Any
 
 # Add parent directories to path
@@ -88,7 +89,7 @@ class FeeManager:
             )
             
             # Get LLM's tool decision
-            response = self.llm_with_tools.invoke([
+            response = await self.llm_with_tools.ainvoke([
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_query)
             ])
@@ -110,7 +111,10 @@ class FeeManager:
             for tool in self.tools:
                 if tool.name == tool_name:
                     tool_calls_made.append(f"{tool_name}(args={tool_args})")
-                    result = tool.invoke(tool_args)
+                    if inspect.iscoroutinefunction(tool.func):
+                        result = await tool.ainvoke(tool_args)
+                    else:
+                        result = tool.invoke(tool_args)
                     
                     # If clarification needed, return result and set follow-up flag
                     if tool_name == "request_clarification":

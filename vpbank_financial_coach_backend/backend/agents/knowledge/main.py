@@ -10,6 +10,7 @@ ORCHESTRATOR INTERFACE:
 """
 
 import traceback
+import inspect
 from typing import List, Dict, Any
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
@@ -57,7 +58,7 @@ class KnowledgeBaseAgent:
         # Track conversation for ReAct
         self.conversation_history = []
     
-    def process_task(self, task: str) -> str:
+    async def process_task(self, task: str) -> str:
         """
         MAIN ORCHESTRATOR INTERFACE
         
@@ -109,7 +110,7 @@ class KnowledgeBaseAgent:
                     print("=" * 40)
                 
                 # Get LLM response with tools
-                response = self.llm_with_tools.invoke(messages)
+                response = await self.llm_with_tools.ainvoke(messages)
                 
                 if config.debug_mode:
                     print(f"🤖 LLM Response Type: {type(response)}")
@@ -145,7 +146,10 @@ class KnowledgeBaseAgent:
                         
                         if tool_func:
                             try:
-                                result = tool_func.invoke(tool_args)
+                                if inspect.iscoroutinefunction(tool_func.func):
+                                    result = await tool_func.ainvoke(tool_args)
+                                else:
+                                    result = tool_func.invoke(tool_args)
                                 
                                 # Special handling for respond() tool - THIS IS THE KEY FIX
                                 if tool_name == "respond" and isinstance(result, dict):
@@ -204,7 +208,7 @@ class KnowledgeBaseAgent:
             return error_msg
 
 
-def process_task(task: str, db: AsyncIOMotorDatabase, user_id: str) -> str:
+async def process_task(task: str, db: AsyncIOMotorDatabase, user_id: str) -> str:
     """
     MAIN ORCHESTRATOR INTERFACE
     
@@ -227,7 +231,7 @@ def process_task(task: str, db: AsyncIOMotorDatabase, user_id: str) -> str:
         → "The jar system helps you organize your budget by..."
     """
     agent = KnowledgeBaseAgent(db, user_id)
-    return agent.process_task(task)
+    return await agent.process_task(task)
 
 
 # Legacy function names for backward compatibility
