@@ -25,7 +25,7 @@ class ChatResponse(BaseModel):
 async def handle_chat_message(
     request: ChatRequest,
     db: AsyncIOMotorDatabase = Depends(deps.get_db),
-    current_user: user_model.UserInDB = Depends(deps.get_current_active_user)
+    current_user: user_model.UserInDB = Depends(deps.get_current_user)
 ):
     """
     Handles a user's chat message through the orchestrator service.
@@ -60,7 +60,7 @@ async def handle_chat_message(
 @router.get("/history", response_model=List[conversation_model.ConversationTurnInDB])
 async def get_chat_history(
     db: AsyncIOMotorDatabase = Depends(deps.get_db),
-    current_user: user_model.UserInDB = Depends(deps.get_current_active_user),
+    current_user: user_model.UserInDB = Depends(deps.get_current_user),
     limit: int = Query(20, ge=1, le=100, description="Number of recent conversation turns to retrieve.")
 ):
     """
