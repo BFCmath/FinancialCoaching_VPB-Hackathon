@@ -32,8 +32,12 @@ class ConversationService:
     def __init__(self, db: AsyncIOMotorDatabase, user_id: str):
         self.db = db
         self.user_id = user_id
+    async def add_conversation_turn(self, turn_data: ConversationTurnCreate) -> None:
+        """Add conversation turn using a Pydantic model."""
+        # The db_utils function already expects the model, so this is now very clean.
+        await db_utils.add_conversation_turn_for_user(self.db, self.user_id, turn_data)
     
-    async def add_conversation_turn(self, user_input: str, agent_output: str, 
+    async def add_conversation_turn_detail(self, user_input: str, agent_output: str, 
                                     agent_list: Optional[List[str]] = None, 
                                     tool_call_list: Optional[List[str]] = None) -> None:
         """Add conversation turn with memory limit."""
@@ -51,10 +55,9 @@ class ConversationService:
     
     async def get_conversation_history(self, limit: Optional[int] = None) -> List[ConversationTurnInDB]:
         """Get recent conversation history."""
-        history = await db_utils.get_conversation_history_for_user(self.db, self.user_id, limit)
-        if limit is not None:
-            return history[-limit:]
-        return history
+        # This now needs the ObjectId to string conversion fix as well
+        history_docs = await db_utils.get_conversation_history_for_user(self.db, self.user_id, limit=limit)
+        return history_docs
     
     async def get_agent_specific_history(self, agent_name: str, max_turns: int = 10) -> List[ConversationTurnInDB]:
         """Get conversation history for specific agent."""

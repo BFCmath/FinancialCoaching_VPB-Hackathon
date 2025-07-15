@@ -36,6 +36,7 @@ async def get_user_by_username(db: AsyncIOMotorDatabase, username: str) -> Optio
     """Retrieve a user from the database by their username."""
     user_doc = await db[USERS_COLLECTION].find_one({"username": username})
     if user_doc:
+        user_doc["_id"] = str(user_doc["_id"]) # Add this line
         return user.UserInDB(**user_doc)
     return None
 
@@ -43,23 +44,27 @@ async def get_user_by_email(db: AsyncIOMotorDatabase, email: str) -> Optional[us
     """Retrieve a user from the database by their email."""
     user_doc = await db[USERS_COLLECTION].find_one({"email": email})
     if user_doc:
+        user_doc["_id"] = str(user_doc["_id"]) # Add this line
         return user.UserInDB(**user_doc)
     return None
 
 async def create_user(db: AsyncIOMotorDatabase, user_in: user.UserCreate) -> user.UserInDB:
     """Create a new user in the database."""
     from backend.services.security import get_password_hash
+
+    user_data = {
+        "username": user_in.username,
+        "email": user_in.email,
+        "hashed_password": get_password_hash(user_in.password),
+    }
+
+    result = await db[USERS_COLLECTION].insert_one(user_data)
+
+    created_doc = await db[USERS_COLLECTION].find_one({"_id": result.inserted_id})
     
-    hashed_password = get_password_hash(user_in.password)
-    user_doc = user.UserInDB(
-        username=user_in.username,
-        email=user_in.email,
-        hashed_password=hashed_password
-    )
-    
-    # Using .dict() is deprecated, use .model_dump()
-    await db[USERS_COLLECTION].insert_one(user_doc.model_dump())
-    return user_doc
+    # Manually convert ObjectId to string for Pydantic validation
+    created_doc["_id"] = str(created_doc["_id"])
+    return user.UserInDB(**created_doc)
 
 # =============================================================================
 # USER SETTINGS OPERATIONS
@@ -125,12 +130,23 @@ async def get_agent_lock_for_user(db: AsyncIOMotorDatabase, user_id: str) -> Opt
 
 async def add_conversation_turn_for_user(db: AsyncIOMotorDatabase, user_id: str, turn_data: conversation.ConversationTurnCreate) -> conversation.ConversationTurnInDB:
     """Adds a new conversation turn to the user's history."""
-    turn_doc = conversation.ConversationTurnInDB(
-        user_id=user_id,
-        **turn_data.model_dump()
-    )
-    await db[CONVERSATION_HISTORY_COLLECTION].insert_one(turn_doc.model_dump())
-    return turn_doc
+    # Create the dictionary to be inserted
+    turn_dict = turn_data.model_dump()
+    turn_dict["user_id"] = user_id
+    turn_dict["timestamp"] = datetime.utcnow() # Ensure timestamp is set on creation
+
+    # Insert the dictionary and get the result
+    result = await db[CONVERSATION_HISTORY_COLLECTION].insert_one(turn_dict)
+    
+    # Fetch the newly created document from the database
+    created_doc = await db[CONVERSATION_HISTORY_COLLECTION].find_one({"_id": result.inserted_id})
+    
+    # Convert its ObjectId to a string before validation
+    if created_doc and "_id" in created_doc:
+        created_doc["_id"] = str(created_doc["_id"])
+        
+    # Return a valid Pydantic model
+    return conversation.ConversationTurnInDB(**created_doc)
 
 async def get_conversation_history_for_user(db: AsyncIOMotorDatabase, user_id: str, limit: int = 10) -> List[conversation.ConversationTurnInDB]:
     """Retrieves the most recent conversation history for a user."""
@@ -139,6 +155,11 @@ async def get_conversation_history_for_user(db: AsyncIOMotorDatabase, user_id: s
     ).sort("timestamp", -1).limit(limit)
     
     history = await history_cursor.to_list(length=limit)
+
+    # Add the ObjectId to string conversion here as well
+    for turn in history:
+        turn["_id"] = str(turn["_id"])
+        
     # Reverse the list to have the oldest message first
     return [conversation.ConversationTurnInDB(**turn) for turn in reversed(history)]
 
@@ -149,21 +170,38 @@ async def get_conversation_history_for_user(db: AsyncIOMotorDatabase, user_id: s
 
 async def get_all_jars_for_user(db: AsyncIOMotorDatabase, user_id: str) -> List[jar.JarInDB]:
     """Retrieves all jars for a specific user."""
+    jars = []
     jars_cursor = db[JARS_COLLECTION].find({"user_id": user_id})
-    return [jar.JarInDB(**j) async for j in jars_cursor]
+    async for j in jars_cursor:
+        # This is the crucial step: convert ObjectId to string
+        j["_id"] = str(j["_id"])
+        jars.append(jar.JarInDB(**j))
+    return jars
+
 
 async def get_jar_by_name(db: AsyncIOMotorDatabase, user_id: str, jar_name: str) -> Optional[jar.JarInDB]:
     """Retrieves a single jar by its name for a specific user."""
     # Case-insensitive search for the name
     jar_doc = await db[JARS_COLLECTION].find_one({"user_id": user_id, "name": {"$regex": f"^{jar_name}$", "$options": "i"}})
     if jar_doc:
+        jar_doc["_id"] = str(jar_doc["_id"])
         return jar.JarInDB(**jar_doc)
     return None
 
-async def create_jar_in_db(db: AsyncIOMotorDatabase, user_id: str, jar_data: jar.JarInDB) -> jar.JarInDB:
-    """Creates a new jar document in the database."""
-    await db[JARS_COLLECTION].insert_one(jar_data.model_dump(by_alias=True))
-    return jar_data
+async def create_jar_in_db(db: AsyncIOMotorDatabase, jar_dict: Dict[str, Any]) -> jar.JarInDB:
+    """Creates a new jar document from a dictionary in the database."""
+    # Insert the dictionary and get the result
+    result = await db[JARS_COLLECTION].insert_one(jar_dict)
+    
+    # Fetch the newly created document from the database
+    created_doc = await db[JARS_COLLECTION].find_one({"_id": result.inserted_id})
+    
+    # Convert its ObjectId to a string before validation
+    if created_doc and "_id" in created_doc:
+        created_doc["_id"] = str(created_doc["_id"])
+    
+    # Return a valid Pydantic model
+    return jar.JarInDB(**created_doc)
 
 async def update_jar_in_db(db: AsyncIOMotorDatabase, user_id: str, original_jar_name: str, update_data: Dict[str, Any]) -> Optional[jar.JarInDB]:
     """Updates an existing jar document."""
@@ -173,6 +211,8 @@ async def update_jar_in_db(db: AsyncIOMotorDatabase, user_id: str, original_jar_
         return_document=ReturnDocument.AFTER
     )
     if result:
+        # This is the crucial fix: convert ObjectId to string
+        result["_id"] = str(result["_id"])
         return jar.JarInDB(**result)
     return None
 
@@ -195,10 +235,20 @@ async def get_transactions_by_jar_for_user(db: AsyncIOMotorDatabase, user_id: st
     transactions_cursor = db[TRANSACTIONS_COLLECTION].find({"user_id": user_id, "jar": jar_name})
     return [transaction.TransactionInDB(**t) async for t in transactions_cursor]
 
-async def create_transaction_in_db(db: AsyncIOMotorDatabase, user_id: str, transaction_data: transaction.TransactionInDB) -> transaction.TransactionInDB:
-    """Creates a new transaction document in the database."""
-    await db[TRANSACTIONS_COLLECTION].insert_one(transaction_data.model_dump(by_alias=True))
-    return transaction_data
+async def create_transaction_in_db(db: AsyncIOMotorDatabase, transaction_dict: Dict[str, Any]) -> transaction.TransactionInDB:
+    """Creates a new transaction document from a dictionary in the database."""
+    # Insert the dictionary and get the result
+    result = await db[TRANSACTIONS_COLLECTION].insert_one(transaction_dict)
+
+    # Fetch the newly created document from the database
+    created_doc = await db[TRANSACTIONS_COLLECTION].find_one({"_id": result.inserted_id})
+
+    # Convert its ObjectId to a string before validation
+    if created_doc and "_id" in created_doc:
+        created_doc["_id"] = str(created_doc["_id"])
+    
+    # Return a valid Pydantic model
+    return transaction.TransactionInDB(**created_doc)
 
 async def delete_transaction_by_id(db: AsyncIOMotorDatabase, user_id: str, transaction_id: str) -> bool:
     """Deletes a transaction by its ID for a specific user."""
@@ -232,10 +282,20 @@ async def get_fee_by_name(db: AsyncIOMotorDatabase, user_id: str, fee_name: str)
         return fee.RecurringFeeInDB(**fee_doc)
     return None
 
-async def create_fee_in_db(db: AsyncIOMotorDatabase, user_id: str, fee_data: fee.RecurringFeeInDB) -> fee.RecurringFeeInDB:
-    """Creates a new recurring fee document in the database."""
-    await db[FEES_COLLECTION].insert_one(fee_data.model_dump(by_alias=True))
-    return fee_data
+async def create_fee_in_db(db: AsyncIOMotorDatabase, fee_dict: Dict[str, Any]) -> fee.RecurringFeeInDB:
+    """Creates a new recurring fee document from a dictionary in the database."""
+    # Insert the dictionary and get the result
+    result = await db[FEES_COLLECTION].insert_one(fee_dict)
+
+    # Fetch the newly created document from the database
+    created_doc = await db[FEES_COLLECTION].find_one({"_id": result.inserted_id})
+
+    # Convert its ObjectId to a string before validation
+    if created_doc and "_id" in created_doc:
+        created_doc["_id"] = str(created_doc["_id"])
+    
+    # Return a valid Pydantic model
+    return fee.RecurringFeeInDB(**created_doc)
 
 async def update_fee_in_db(db: AsyncIOMotorDatabase, user_id: str, fee_name: str, update_data: Dict[str, Any]) -> Optional[fee.RecurringFeeInDB]:
     """Updates an existing fee document."""
@@ -264,20 +324,28 @@ async def get_active_fees_for_user(db: AsyncIOMotorDatabase, user_id: str) -> Li
 
 async def get_all_plans_for_user(db: AsyncIOMotorDatabase, user_id: str) -> List[plan.BudgetPlanInDB]:
     """Retrieves all budget plans for a specific user."""
+    plans = []
     plans_cursor = db[PLANS_COLLECTION].find({"user_id": user_id})
-    return [plan.BudgetPlanInDB(**p) async for p in plans_cursor]
+    async for p in plans_cursor:
+        p["_id"] = str(p["_id"])
+        plans.append(plan.BudgetPlanInDB(**p))
+    return plans
 
 async def get_plan_by_name(db: AsyncIOMotorDatabase, user_id: str, plan_name: str) -> Optional[plan.BudgetPlanInDB]:
     """Retrieves a single plan by its name for a specific user."""
     plan_doc = await db[PLANS_COLLECTION].find_one({"user_id": user_id, "name": {"$regex": f"^{plan_name}$", "$options": "i"}})
     if plan_doc:
+        plan_doc["_id"] = str(plan_doc["_id"])
         return plan.BudgetPlanInDB(**plan_doc)
     return None
 
-async def create_plan_in_db(db: AsyncIOMotorDatabase, user_id: str, plan_data: plan.BudgetPlanInDB) -> plan.BudgetPlanInDB:
-    """Creates a new budget plan document in the database."""
-    await db[PLANS_COLLECTION].insert_one(plan_data.model_dump(by_alias=True))
-    return plan_data
+async def create_plan_in_db(db: AsyncIOMotorDatabase, plan_dict: Dict[str, Any]) -> plan.BudgetPlanInDB:
+    """Creates a new budget plan document from a dictionary in the database."""
+    result = await db[PLANS_COLLECTION].insert_one(plan_dict)
+    created_doc = await db[PLANS_COLLECTION].find_one({"_id": result.inserted_id})
+    if created_doc:
+        created_doc["_id"] = str(created_doc["_id"])
+    return plan.BudgetPlanInDB(**created_doc)
 
 async def update_plan_in_db(db: AsyncIOMotorDatabase, user_id: str, plan_name: str, update_data: Dict[str, Any]) -> Optional[plan.BudgetPlanInDB]:
     """Updates an existing plan document."""
@@ -287,6 +355,7 @@ async def update_plan_in_db(db: AsyncIOMotorDatabase, user_id: str, plan_name: s
         return_document=ReturnDocument.AFTER
     )
     if result:
+        result["_id"] = str(result["_id"])
         return plan.BudgetPlanInDB(**result)
     return None
 

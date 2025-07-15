@@ -7,6 +7,7 @@ from backend.services import security
 from backend.utils import db_utils
 from backend.models import user as user_model
 from backend.models import token as token_model
+from backend.services.core_services import CalculationService
 
 router = APIRouter()
 
@@ -36,8 +37,10 @@ async def register_new_user(
     # Create the new user in the database
     new_user = await db_utils.create_user(db, user_in=user_in)
     
+    await CalculationService.initialize_default_data(db=db, user_id=new_user.id)
+
     # Return the public representation of the user
-    return user_model.UserPublic.model_validate(new_user)
+    return user_model.UserPublic.model_validate(new_user.model_dump(by_alias=True))
 
 
 @router.post("/token", response_model=token_model.Token)
@@ -77,4 +80,4 @@ async def read_users_me(
     Get the profile of the currently authenticated user.
     This is a protected endpoint used to verify that authentication is working.
     """
-    return user_model.UserPublic.model_validate(current_user)
+    return user_model.UserPublic.model_validate(current_user.model_dump(by_alias=True))

@@ -13,6 +13,8 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 router = APIRouter()
 
+# In backend/api/routers/transactions.py
+
 @router.post("/", response_model=transaction_model.TransactionInDB, status_code=status.HTTP_201_CREATED)
 async def create_new_transaction(
     transaction_in: transaction_model.TransactionCreate,
@@ -21,35 +23,30 @@ async def create_new_transaction(
 ):
     """
     Creates a new transaction and updates the corresponding jar's balance.
-    This endpoint directly interacts with the database, bypassing the old global state.
     """
     user_id = str(current_user.id)
     
     # 1. Validate that the target jar exists for the user
-    target_jar = await db_utils.get_jar_by_name(db, user_id, transaction_in.jar_name)
+    target_jar = await db_utils.get_jar_by_name(db, user_id, transaction_in.jar)
     if not target_jar:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Jar '{transaction_in.jar_name}' not found for this user."
+            detail=f"Jar '{transaction_in.jar}' not found for this user."
         )
 
-    # 2. Create the transaction document to be saved
-    transaction_to_save = transaction_model.TransactionInDB(
-        user_id=user_id,
-        **transaction_in.model_dump(by_alias=True)
-    )
+    # 2. Prepare the transaction data as a dictionary
+    transaction_dict_to_save = transaction_in.model_dump(by_alias=True)
+    transaction_dict_to_save['user_id'] = user_id
     
-    await db_utils.create_transaction_in_db(db, user_id, transaction_to_save)
-
+    # Create the transaction in the database and get the full model back
+    saved_transaction = await db_utils.create_transaction_in_db(db, transaction_dict_to_save)
 
     # 3. Update the jar's current balance
     new_current_amount = target_jar.current_amount + transaction_in.amount
     
-    # We need the user's total income to calculate the new percentage
     user_settings = await db_utils.get_user_settings(db, user_id)
     total_income = user_settings.total_income if user_settings and user_settings.total_income > 0 else 5000.0
-    
-    new_current_percent = new_current_amount / total_income
+    new_current_percent = new_current_amount / total_income if total_income > 0 else 0.0
 
     update_data = {
         "current_amount": new_current_amount,
@@ -57,14 +54,14 @@ async def create_new_transaction(
     }
     await db_utils.update_jar_in_db(db, user_id, target_jar.name, update_data)
 
-    return transaction_to_save
+    return saved_transaction
 
 
 @router.get("/", response_model=List[transaction_model.TransactionInDB])
 async def query_transactions(
     db: AsyncIOMotorDatabase = Depends(deps.get_db),
     current_user: user_model.UserInDB = Depends(deps.get_current_active_user),
-    jar_name: Optional[str] = Query(None, description="Filter by jar name."),
+    jar: Optional[str] = Query(None, description="Filter by jar name."),
     start_date: Optional[date] = Query(None, description="Filter by start date (YYYY-MM-DD)."),
     end_date: Optional[date] = Query(None, description="Filter by end date (YYYY-MM-DD)."),
     min_amount: Optional[float] = Query(None, gt=0, description="Filter by minimum transaction amount."),
@@ -78,8 +75,8 @@ async def query_transactions(
     user_id = str(current_user.id)
     query_filter = {"user_id": user_id}
 
-    if jar_name:
-        query_filter["jar"] = jar_name
+    if jar:
+        query_filter["jar"] = jar
     
     if start_date or end_date:
         date_filter = {}
@@ -100,4 +97,11 @@ async def query_transactions(
     cursor = db[db_utils.TRANSACTIONS_COLLECTION].find(query_filter).sort("date", -1).limit(limit)
     
     transactions = await cursor.to_list(length=limit)
+
+    # --- ADD THIS BLOCK TO FIX THE BUG ---
+    # Manually convert ObjectId to string for each document before Pydantic validation
+    for t in transactions:
+        t["_id"] = str(t["_id"])
+    # ------------------------------------
+
     return [transaction_model.TransactionInDB(**t) for t in transactions]

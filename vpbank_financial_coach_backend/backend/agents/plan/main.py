@@ -53,9 +53,9 @@ class BudgetAdvisorAgent:
             user_id: User identifier for data isolation
         """
         # Validate required parameters
-        if not db:
+        if db is None:
             raise ValueError("Database connection is required for production plan agent")
-        if not user_id:
+        if user_id is None:
             raise ValueError("User ID is required for production plan agent")
             
         self.db = db
@@ -252,7 +252,7 @@ async def process_task(task: str, db: AsyncIOMotorDatabase, user_id: str,
     Note: Stage is now determined from conversation history, making this fully stateless.
     """
     # Validate required parameters for production
-    if not db:
+    if db is None:
         return {
             "response": "❌ Error: Database connection is required for budget advisor agent.",
             "requires_follow_up": False,
@@ -260,7 +260,7 @@ async def process_task(task: str, db: AsyncIOMotorDatabase, user_id: str,
             "stage": "1"
         }
     
-    if not user_id:
+    if user_id is None:
         return {
             "response": "❌ Error: User ID is required for budget advisor agent.",
             "requires_follow_up": False,

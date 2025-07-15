@@ -26,9 +26,9 @@ class ClassifierInterface(BaseWorkerInterface):
             Example: {"response": "...", "requires_follow_up": False}
         """
         # Validate required parameters for production
-        if not db:
+        if db is None:
             raise ValueError("Database connection is required for production classifier agent")
-        if not user_id:
+        if user_id is None:
             raise ValueError("User ID is required for production classifier agent")
             
         if conversation_history is None:

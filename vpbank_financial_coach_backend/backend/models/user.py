@@ -28,12 +28,15 @@ class UserInDB(UserBase):
     Model representing a user as stored in the database.
     It includes the hashed_password instead of the plain password.
     """
+    id: str = Field(alias="_id")
     hashed_password: str
 
     class Config:
         # This allows the model to be created from dictionary-like objects,
         # which is how data is retrieved from MongoDB.
         orm_mode = True
+        allow_population_by_field_name = True
+
 
 class UserPublic(UserBase):
     """

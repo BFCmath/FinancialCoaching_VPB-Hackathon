@@ -36,10 +36,14 @@ class OrchestratorService:
             # Call the orchestrator with Enhanced Pattern 2
             result = await process_task_async(message, self.user_id, self.db)
             
+            # Check if the response indicates an error
+            response_text = result["response"]
+            is_error = self._is_error_response(response_text)
+            
             return {
-                "response": result["response"],
+                "response": response_text,
                 "requires_follow_up": result.get("requires_follow_up", False),
-                "success": True
+                "success": not is_error
             }
             
         except Exception as e:
@@ -49,3 +53,39 @@ class OrchestratorService:
                 "requires_follow_up": False,
                 "success": False
             }
+    
+    def _is_error_response(self, response: str) -> bool:
+        """
+        Detect if a response indicates an error condition.
+        
+        Args:
+            response: The agent response text
+            
+        Returns:
+            True if the response indicates an error, False otherwise
+        """
+        if not response:
+            return True
+            
+        error_indicators = [
+            "❌ Error:",
+            "❌ An error occurred:",
+            "❌ Tool",
+            "❌ Unknown agent:",
+            "❌ Orchestrator error:",
+            "❌ I encountered an error",
+            "❌ This orchestrator requires async interface",
+            "Error: Database connection",
+            "Error: User ID",
+            "Error: The agent did not select a tool",
+            "could not provide a complete answer within the allowed steps",
+            "Agent loop completed without a final answer",
+            "Failed to process"
+        ]
+        
+        response_lower = response.lower()
+        for indicator in error_indicators:
+            if indicator.lower() in response_lower:
+                return True
+                
+        return False

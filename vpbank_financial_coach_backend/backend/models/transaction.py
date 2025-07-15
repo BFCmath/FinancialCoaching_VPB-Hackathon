@@ -10,7 +10,7 @@ class TransactionBase(BaseModel):
     Base model for a transaction, matching the lab database.py structure exactly.
     """
     amount: float = Field(..., gt=0, example=75.50, description="The transaction amount, must be positive.")
-    jar: str = Field(..., min_length=2, max_length=100, example="necessities", description="Reference to jar name (matches lab structure).")
+    jar: str = Field(..., alias="jar", min_length=2, max_length=100, example="necessities", description="Reference to jar name (matches lab structure).")
     description: str = Field(..., max_length=1000, example="Grocery shopping at supermarket")
     date: str = Field(..., example="2025-07-14", description="Date string (YYYY-MM-DD format) - matches lab structure.")
     time: str = Field(..., example="14:30", description="Time string (HH:MM format) - matches lab structure.")

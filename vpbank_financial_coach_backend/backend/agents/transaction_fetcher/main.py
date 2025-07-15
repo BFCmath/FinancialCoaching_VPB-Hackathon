@@ -107,7 +107,7 @@ async def process_task(task: str, db: AsyncIOMotorDatabase, user_id: str,
     Returns:
         Dict containing response and metadata
     """
-    if not db or not user_id:
+    if db is None or user_id is None:
         return {
             "response": "❌ Error: Database connection and user_id are required for fetcher agent.",
             "requires_follow_up": False, "tool_calls": [], "success": False

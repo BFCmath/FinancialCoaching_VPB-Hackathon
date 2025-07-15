@@ -129,11 +129,20 @@ class JarManagementService:
         created_jars_info = []
         newly_created_names = []
         for data in validated_jars_data:
-            new_jar = JarCreate(
-                name=data['name'], description=data['description'], percent=data['percent'],
-                current_percent=0.0, current_amount=0.0, amount=data['amount']
-            )
-            created_jar = await db_utils.create_jar_in_db(db, user_id, new_jar)
+             # 1. Create a simple dictionary with all required fields
+            jar_dict_to_create = {
+                "user_id": user_id,
+                "name": data['name'],
+                "description": data['description'],
+                "percent": data['percent'],
+                "amount": data['amount'],
+                "current_percent": 0.0,
+                "current_amount": 0.0
+            }
+
+            # 2. Call the db_utils function with the correct 2 arguments
+            created_jar = await db_utils.create_jar_in_db(db, jar_dict_to_create)
+            
             newly_created_names.append(created_jar.name)
             created_jars_info.append(f"'{created_jar.name}': {CalculationService.format_percentage(created_jar.percent)} ({CalculationService.format_currency(created_jar.amount)})")
 
@@ -246,7 +255,7 @@ class JarManagementService:
         update_summaries = []
         
         for original_name, update_data, changes in updates_to_perform:
-            updated_jar = await db_utils.update_jar_in_db(db, user_id, original_name, update_data)
+            updated_jar = await db_utils.update_jar_in_db(db, user_id, original_name, update_data.model_dump(exclude_unset=True))
             final_updated_names.append(updated_jar.name)
             update_summaries.append(f"'{original_name}': {', '.join(changes)}")
 
@@ -445,7 +454,7 @@ class JarManagementService:
                 percent=new_percent,
                 amount=new_percent * total_income
             )
-            updated_jar = await db_utils.update_jar_in_db(db, user_id, jar.name, update_data)
+            updated_jar = await db_utils.update_jar_in_db(db, user_id, jar.name, update_data.model_dump(exclude_unset=True))
             rebalanced_list.append(f"{updated_jar.name}: {CalculationService.format_percentage(old_percent)} → {CalculationService.format_percentage(updated_jar.percent)}")
 
         # Rounding correction
@@ -457,8 +466,8 @@ class JarManagementService:
                 percent=new_percent,
                 amount=new_percent * total_income
             )
-            await db_utils.update_jar_in_db(db, user_id, largest_jar.name, update_data)
-        
+            await db_utils.update_jar_in_db(db, user_id, largest_jar.name, update_data.model_dump(exclude_unset=True))
+
         return f"📊 Rebalanced other jars: {', '.join(rebalanced_list)}"
 
     @staticmethod
@@ -487,7 +496,7 @@ class JarManagementService:
                     percent=max(0.0, new_percent),
                     amount=new_percent * total_income
                 )
-                await db_utils.update_jar_in_db(db, user_id, jar.name, update_data)
+                await db_utils.update_jar_in_db(db, user_id, jar.name, update_data.model_dump(exclude_unset=True))
         elif len(other_jars) > 0:
             equal_share = remaining_space / len(other_jars)
             for jar in other_jars:
@@ -495,7 +504,7 @@ class JarManagementService:
                     percent=equal_share,
                     amount=equal_share * total_income
                 )
-                await db_utils.update_jar_in_db(db, user_id, jar.name, update_data)
+                await db_utils.update_jar_in_db(db, user_id, jar.name, update_data.model_dump(exclude_unset=True))
         
         # Reload other_jars for updated values
         other_jars = [j for j in await db_utils.get_all_jars_for_user(db, user_id) if j.name not in updated_jars_names]
@@ -510,7 +519,8 @@ class JarManagementService:
                 percent=new_percent,
                 amount=new_percent * total_income
             )
-            await db_utils.update_jar_in_db(db, user_id, largest_jar.name, update_data)
+            await db_utils.update_jar_in_db(db, user_id, jar.name, update_data.model_dump(exclude_unset=True))
+
         
         return f"📊 Rebalanced other jars: {', '.join(rebalanced_list)}"
 
@@ -533,7 +543,8 @@ class JarManagementService:
                         percent=equal_share,
                         amount=equal_share * total_income
                     )
-                    await db_utils.update_jar_in_db(db, user_id, jar.name, update_data)
+                    await db_utils.update_jar_in_db(db, user_id, jar.name, update_data.model_dump(exclude_unset=True))
+
         else:
             for jar in remaining_jars:
                 proportion = jar.percent / remaining_total_percent
@@ -542,8 +553,8 @@ class JarManagementService:
                     percent=new_percent,
                     amount=new_percent * total_income
                 )
-                await db_utils.update_jar_in_db(db, user_id, jar.name, update_data)
-        
+                await db_utils.update_jar_in_db(db, user_id, jar.name, update_data.model_dump(exclude_unset=True))
+
         # Reload remaining_jars
         remaining_jars = await db_utils.get_all_jars_for_user(db, user_id)
         rebalanced_list = [f"{jar.name} → {CalculationService.format_percentage(jar.percent)}" for jar in remaining_jars]
@@ -557,6 +568,6 @@ class JarManagementService:
                 percent=new_percent,
                 amount=new_percent * total_income
             )
-            await db_utils.update_jar_in_db(db, user_id, largest_jar.name, update_data)
-        
+            await db_utils.update_jar_in_db(db, user_id, largest_jar.name, update_data.model_dump(exclude_unset=True))
+
         return f"📊 Redistributed freed percentage: {', '.join(rebalanced_list)}"

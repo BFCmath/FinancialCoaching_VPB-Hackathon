@@ -42,7 +42,7 @@ class ReActClassifierAgent:
         )
         
         # Create service container for dependency injection
-        if db and user_id:
+        if db is not None and user_id is not None:
             self.services = ClassifierServiceContainer(db, user_id)
             self.tools = get_all_classifier_tools(self.services)
         else:
@@ -71,7 +71,7 @@ class ReActClassifierAgent:
             A tuple containing the final response, tool calls, and a follow-up flag.
         """
         # Validate that agent is properly configured for production use
-        if not self.services or not self.db or not self.user_id:
+        if self.services is None or self.db is None or self.user_id is None:
             return (
                 "❌ Error: Classifier agent not properly configured. Database and user context required.",
                 [],
@@ -190,7 +190,7 @@ async def process_task_async(task: str, conversation_history: List[ConversationT
         Dict with response and requires_follow_up flag.
     """
     # Validate required parameters for production use
-    if not db or not user_id:
+    if db is None or user_id is None:
         return {
             "response": "❌ Error: Database connection and user_id are required for classifier agent.",
             "requires_follow_up": False
