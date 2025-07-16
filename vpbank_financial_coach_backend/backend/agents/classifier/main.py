@@ -10,7 +10,7 @@ ORCHESTRATOR INTERFACE:
 """
 
 import asyncio
-import concurrent.futures
+import traceback
 from typing import List, Dict, Any
 
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -24,7 +24,7 @@ from backend.models.conversation import ConversationTurnInDB
 
 # Define final action tools that end the loop
 FINAL_ACTION_TOOLS = [
-    "add_money_to_jar_with_confidence",
+    "add_money_to_jar",
     "report_no_suitable_jar",
     "respond" 
 ]
@@ -80,9 +80,18 @@ class ReActClassifierAgent:
                 False
             )
         
+        # Validate user query
+        if not user_query or not user_query.strip():
+            return (
+                "❌ Error: User query cannot be empty.",
+                [],
+                False
+            )
+        
         tool_calls_made = []
         requires_follow_up = False
-        final_response = "Error: Agent loop completed without a final answer."
+        final_response = "❌ Error: Agent loop completed without a final answer."
+        
         try:
             # Build prompt with database context if available
             if self.db is not None and self.user_id is not None:
@@ -101,6 +110,7 @@ THE ReAct FRAMEWORK: **Reason** -> **Act** -> **Observe** -> **Repeat or Finaliz
 User: "{user_query}"
 Assistant:
 """
+            
             messages = [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_query)
@@ -114,20 +124,23 @@ Assistant:
                 if config.debug_mode:
                     print(f"🔄 ReAct Iteration {iteration + 1}/{config.max_react_iterations}")
 
-                response = await self.llm_with_tools.ainvoke(messages)
-                messages.append(AIMessage(content=str(response.content), tool_calls=response.tool_calls))
+                try:
+                    response = await self.llm_with_tools.ainvoke(messages)
+                    messages.append(AIMessage(content=str(response.content), tool_calls=response.tool_calls))
+                except Exception as e:
+                    final_response = f"❌ LLM call failed: {str(e)}"
+                    return final_response, tool_calls_made, False
 
                 if not response.tool_calls:
                     if config.debug_mode:
                         print("🤖 Agent failed to call a tool. Returning error.")
-                    final_response = "Error: The agent did not select a tool to respond."
+                    final_response = "❌ Error: The agent did not select a tool to respond."
                     return final_response, tool_calls_made, False
 
                 for tool_call in response.tool_calls:
                     tool_name = tool_call['name']
                     tool_args = tool_call['args']
                     tool_call_id = tool_call['id']
-
 
                     tool_calls_made.append(f"{tool_name}(args={tool_args})")
 
@@ -152,7 +165,7 @@ Assistant:
                             return final_response, tool_calls_made, requires_follow_up
 
                         # If final classification tool, end without follow-up
-                        if tool_name in ["add_money_to_jar_with_confidence", "report_no_suitable_jar"]:
+                        if tool_name in ["add_money_to_jar", "report_no_suitable_jar"]:
                             if config.debug_mode:
                                 print(f"🏁 ReAct loop finished by final action tool: '{tool_name}'.")
                             final_response = str(result)
@@ -160,18 +173,21 @@ Assistant:
                         
                         # Add observation for non-final tools
                         messages.append(ToolMessage(content=str(result), tool_call_id=tool_call_id))
+                        
                     except Exception as e:
-                        error_msg = f"❌ Tool {tool_name} failed: {e}"
+                        error_msg = f"❌ Tool {tool_name} failed: {str(e)}"
                         messages.append(ToolMessage(content=error_msg, tool_call_id=tool_call_id))
-                        print(error_msg)
+                        if config.debug_mode:
+                            print(error_msg)
 
             final_response = "❌ Classifier could not provide a complete answer within the allowed steps."
             return final_response, tool_calls_made, False
 
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            final_response = f"❌ An error occurred: {e}"
+            if config.debug_mode:
+                import traceback
+                traceback.print_exc()
+            final_response = f"❌ An error occurred during processing: {str(e)}"
             return final_response, tool_calls_made, False
 
 
@@ -187,24 +203,63 @@ async def process_task_async(task: str, conversation_history: List[ConversationT
         user_id: User ID (required for production use).
 
     Returns:
-        Dict with response and requires_follow_up flag.
+        Dict with response, requires_follow_up flag, and tool_calls list.
     """
     # Validate required parameters for production use
     if db is None or user_id is None:
         return {
             "response": "❌ Error: Database connection and user_id are required for classifier agent.",
-            "requires_follow_up": False
+            "requires_follow_up": False,
+            "tool_calls": [],
+            "error": True
         }
     
-    agent = ReActClassifierAgent(db, user_id)
+    # Validate task input
+    if not task or not task.strip():
+        return {
+            "response": "❌ Error: Task cannot be empty.",
+            "requires_follow_up": False,
+            "tool_calls": [],
+            "error": True
+        }
     
-    # Process the request
-    final_response, tool_calls_made, requires_follow_up = await agent.process_request(task, conversation_history)
+    try:
+        agent = ReActClassifierAgent(db, user_id)
+        
+        # Process the request
+        final_response, tool_calls_made, requires_follow_up = await agent.process_request(task, conversation_history)
 
-    if config.verbose_logging:
-        print(f"📝 Logged conversation turn for transaction_classifier. Follow-up: {requires_follow_up}")
+        if config.verbose_logging:
+            print(f"📝 Classifier agent completed. Follow-up: {requires_follow_up}")
 
-    return {"response": final_response, "requires_follow_up": requires_follow_up}
+        return {
+            "response": final_response, 
+            "requires_follow_up": requires_follow_up,
+            "tool_calls": tool_calls_made,
+            "error": False
+        }
+    
+    except ValueError as e:
+        # Handle validation errors from services
+        return {
+            "response": f"❌ Validation error: {str(e)}",
+            "requires_follow_up": False,
+            "tool_calls": [],
+            "error": True
+        }
+    
+    except Exception as e:
+        # Handle any unexpected errors
+        import traceback
+        if config.debug_mode:
+            traceback.print_exc()
+        
+        return {
+            "response": f"❌ Classifier agent failed with unexpected error: {str(e)}",
+            "requires_follow_up": False,
+            "tool_calls": [],
+            "error": True
+        }
 
 
 def process_task(task: str, conversation_history: List[ConversationTurnInDB] = None) -> Dict[str, Any]:

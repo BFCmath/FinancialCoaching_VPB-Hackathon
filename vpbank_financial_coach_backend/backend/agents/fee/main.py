@@ -73,6 +73,14 @@ class FeeManager:
                 False
             )
         
+        # Validate user query
+        if not user_query or not user_query.strip():
+            return (
+                "❌ Error: User query cannot be empty.",
+                [],
+                False
+            )
+        
         tool_calls_made = []
         
         try:
@@ -89,14 +97,18 @@ class FeeManager:
             )
             
             # Get LLM's tool decision
-            response = await self.llm_with_tools.ainvoke([
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_query)
-            ])
+            try:
+                response = await self.llm_with_tools.ainvoke([
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_query)
+                ])
+            except Exception as e:
+                return f"❌ LLM call failed: {str(e)}", tool_calls_made, False
 
             if not response.tool_calls:
-                print("🤖 Agent failed to call a tool.")
-                return "Error: No action was taken.", [], False
+                if config.debug_mode:
+                    print("🤖 Agent failed to call a tool.")
+                return "❌ Error: No action was taken.", tool_calls_made, False
 
             # Execute the chosen tool
             tool_call = response.tool_calls[0]  # Take first tool call
@@ -110,24 +122,31 @@ class FeeManager:
             for tool in self.tools:
                 if tool.name == tool_name:
                     tool_calls_made.append(f"{tool_name}(args={tool_args})")
-                    result = await tool.ainvoke(tool_args)
+                    
+                    try:
+                        result = await tool.ainvoke(tool_args)
 
-                    # If clarification needed, return result and set follow-up flag
-                    if tool_name == "request_clarification":
-                        return result, tool_calls_made, True
-                        
-                    # Otherwise return the tool result directly
-                    return result, tool_calls_made, False
+                        # If clarification needed, return result and set follow-up flag
+                        if tool_name == "request_clarification":
+                            return result, tool_calls_made, True
+                            
+                        # Otherwise return the tool result directly
+                        return result, tool_calls_made, False
+                    
+                    except Exception as e:
+                        return f"❌ Tool {tool_name} failed: {str(e)}", tool_calls_made, False
 
-            return f"Error: Tool {tool_name} not found.", tool_calls_made, False
+            return f"❌ Error: Tool {tool_name} not found.", tool_calls_made, False
 
         except Exception as e:
-            traceback.print_exc()
-            return f"Error: {str(e)}", tool_calls_made, False
+            if config.debug_mode:
+                import traceback
+                traceback.print_exc()
+            return f"❌ Error during processing: {str(e)}", tool_calls_made, False
 
 async def process_task(task: str, db: AsyncIOMotorDatabase = None, user_id: str = None, conversation_history: Optional[List[ConversationTurnInDB]] = None) -> Dict[str, Any]:
     """
-    Main orchestrator interface for the Fee Manager agent with backend database context.
+    Main orchestrator interface for the Fee Manager agent with standardized return format.
     
     Args:
         task: The user's request or clarification response
@@ -136,7 +155,11 @@ async def process_task(task: str, db: AsyncIOMotorDatabase = None, user_id: str 
         conversation_history: Previous conversation turns for context
         
     Returns:
-        Dict containing response and metadata
+        Dict containing:
+        - response: Agent response text
+        - requires_follow_up: Boolean indicating if agent needs another turn  
+        - tool_calls: List of tool calls made during processing
+        - error: Boolean indicating if an error occurred
     """
     # Validate required parameters for production use
     if db is None or user_id is None:
@@ -144,21 +167,53 @@ async def process_task(task: str, db: AsyncIOMotorDatabase = None, user_id: str 
             "response": "❌ Error: Database connection and user_id are required for fee agent.",
             "requires_follow_up": False,
             "tool_calls": [],
-            "success": False
+            "error": True
         }
     
-    agent = FeeManager(db=db, user_id=user_id)
+    # Validate task input
+    if not task or not task.strip():
+        return {
+            "response": "❌ Error: Task cannot be empty.",
+            "requires_follow_up": False,
+            "tool_calls": [],
+            "error": True
+        }
     
-    # Process request and get tool result
-    result, tool_calls_made, requires_follow_up = await agent.process_request(task, conversation_history)
+    try:
+        agent = FeeManager(db=db, user_id=user_id)
+        
+        # Process request and get tool result
+        result, tool_calls_made, requires_follow_up = await agent.process_request(task, conversation_history)
 
-    # Note: Conversation logging handled at API level in backend pattern
-    if config.verbose_logging:
-        print(f"📝 Fee manager completed task. Follow-up: {requires_follow_up}")
+        # Note: Conversation logging handled at API level in backend pattern
+        if config.verbose_logging:
+            print(f"📝 Fee manager completed task. Follow-up: {requires_follow_up}")
 
-    return {
-        "response": result,  # Direct tool result
-        "requires_follow_up": requires_follow_up,
-        "tool_calls": tool_calls_made,
-        "success": "Error" not in result
-    }
+        return {
+            "response": result,  # Direct tool result
+            "requires_follow_up": requires_follow_up,
+            "tool_calls": tool_calls_made,
+            "error": False
+        }
+    
+    except ValueError as e:
+        # Handle validation errors from services
+        return {
+            "response": f"❌ Validation error: {str(e)}",
+            "requires_follow_up": False,
+            "tool_calls": [],
+            "error": True
+        }
+    
+    except Exception as e:
+        # Handle any unexpected errors
+        if config.debug_mode:
+            import traceback
+            traceback.print_exc()
+        
+        return {
+            "response": f"❌ Fee manager failed with unexpected error: {str(e)}",
+            "requires_follow_up": False,
+            "tool_calls": [],
+            "error": True
+        }

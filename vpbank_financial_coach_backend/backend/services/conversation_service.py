@@ -1,191 +1,188 @@
 """
-Conversation Service - Complete Implementation from Lab
-=======================================================
+Conversation Service - Complete Implementation with Error Handling
+=================================================================
 
-This module implements the complete conversation service ported from the lab
-with database backend, maintaining exact same interface and behavior.
-Covers all conversation operations from lab utils.py:
-- add_conversation_turn (with memory limit)
-- get_conversation_history (with limit)
-- get_agent_specific_history
-- clear_conversation_history
-- get_conversation_context_string
-- Conversation lock utilities: parse_confidence_response, check_conversation_lock, lock_conversation_to_agent, release_conversation_lock
-All methods are async where appropriate.
+This module implements the conversation management service with static methods
+and comprehensive error handling following the same pattern as other services.
+Covers essential conversation operations:
+- add_conversation_turn: Add new conversation turns to history
+- get_conversation_history: Retrieve conversation history with limits
+- get_agent_lock: Check current agent lock status  
+- get_plan_stage: Get current plan stage from latest turn
+All methods use proper input validation and raise ValueError for errors.
 """
 
-from typing import List, Optional, Tuple
-from datetime import datetime
+from typing import List, Optional
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 # Import database utilities and models
-from backend.utils import general_utils
-from backend.models.conversation import ConversationTurnInDB, ConversationTurnCreate
-from backend.core.config import settings  # For MAX_MEMORY_TURNS
+from backend.utils import conversation_utils
+from backend.models.conversation import ConversationTurnInDB
 
 class ConversationService:
     """
-    User-scoped conversation management service.
-    Handles history, agent locks, and context.
+    Conversation management service with static methods.
     """
     
-    def __init__(self, db: AsyncIOMotorDatabase, user_id: str):
-        self.db = db
-        self.user_id = user_id
-    async def add_conversation_turn(self, turn_data: ConversationTurnCreate) -> None:
-        """Add conversation turn using a Pydantic model."""
-        # The db_utils function already expects the model, so this is now very clean.
-        await general_utils.add_conversation_turn_for_user(self.db, self.user_id, turn_data)
-    
-    async def add_conversation_turn_detail(self, user_input: str, agent_output: str, 
-                                    agent_list: Optional[List[str]] = None, 
-                                    tool_call_list: Optional[List[str]] = None) -> None:
-        """Add conversation turn with memory limit."""
-        agent_list = agent_list or []
-        tool_call_list = tool_call_list or []
-        
-        turn_data = ConversationTurnCreate(
-            user_input=user_input,
-            agent_output=agent_output,
-            agent_list=agent_list,
-            tool_call_list=tool_call_list
-        )
-        
-        await general_utils.add_conversation_turn_for_user(self.db, self.user_id, turn_data)
-    
-    async def get_conversation_history(self, limit: Optional[int] = None) -> List[ConversationTurnInDB]:
-        """Get recent conversation history."""
-        # This now needs the ObjectId to string conversion fix as well
-        history_docs = await general_utils.get_conversation_history_for_user(self.db, self.user_id, limit=limit)
-        return history_docs
-    
-    async def get_agent_specific_history(self, agent_name: str, max_turns: int = 10) -> List[ConversationTurnInDB]:
-        """Get conversation history for specific agent."""
-        history = await self.get_conversation_history()
-        filtered = [turn for turn in history if agent_name in turn.agent_list]
-        return filtered[-max_turns:]
-
-    async def get_conversation_context_string(self, limit: int = 5) -> str:
-        """Get conversation history as formatted string for agent context."""
-        recent_turns = await self.get_conversation_history(limit)
-        
-        if not recent_turns:
-            return "No conversation history."
-        
-        context_lines = []
-        for turn in recent_turns:
-            context_lines.append(f"User: {turn.user_input}")
-            context_lines.append(f"Assistant: {turn.agent_output}")
-            if turn.agent_list:
-                context_lines.append(f"Agents: {', '.join(turn.agent_list)}")
-        
-        return "\n".join(context_lines)
-    
     @staticmethod
-    def parse_confidence_response(response: str, agent_name: str) -> Tuple[str, bool]:
-        """Parse agent response for requires_follow_up flag."""
-        follow_up_indicators = [
-            "?", "please", "clarify", "more information", "follow up",
-            "what about", "can you", "would you like", "do you want"
-        ]
-        
-        requires_follow_up = any(indicator in response.lower() for indicator in follow_up_indicators)
-        
-        return response, requires_follow_up
-    
-    async def check_conversation_lock(self) -> Optional[str]:
-        """Check if conversation is locked to a specific agent."""
-        return await general_utils.get_agent_lock_for_user(self.db, self.user_id)
-    
-    async def lock_conversation_to_agent(self, agent_name: str) -> None:
-        """Lock conversation to specific agent for multi-turn interaction."""
-        await general_utils.set_agent_lock_for_user(self.db, self.user_id, agent_name)
-    
-    async def release_conversation_lock(self) -> None:
-        """Release conversation lock to allow orchestrator routing."""
-        await general_utils.set_agent_lock_for_user(self.db, self.user_id, None)
-    
-    # =============================================================================
-    # STAGE MANAGEMENT UTILITIES FOR PLAN AGENT
-    # =============================================================================
-    
-    async def get_current_plan_stage(self) -> str:
+    async def add_conversation_turn(db: AsyncIOMotorDatabase, user_id: str, 
+                                   user_input: str, agent_output: str,
+                                   agent_list: Optional[List[str]] = None,
+                                   tool_call_list: Optional[List[str]] = None,
+                                   agent_lock: Optional[str] = None,
+                                   plan_stage: Optional[str] = None) -> ConversationTurnInDB:
         """
-        Determine current plan agent stage from conversation history.
-        This provides stateless stage management for the plan agent.
-        
-        Returns:
-            Current stage: "1" (information_gathering), "2" (plan_refinement), "3" (plan_implementation)
-        """
-        # Get recent conversation history for plan agent
-        history = await self.get_agent_specific_history("plan", max_turns=10)
-        
-        if not history:
-            return "1"  # Default to stage 1 for new conversations
-        
-        # Look for the most recent stage information in metadata
-        for turn in reversed(history):  # Most recent first
-            if turn.metadata and "plan_stage" in turn.metadata:
-                stage = turn.metadata["plan_stage"]
-                # Validate stage
-                if stage in ["1", "2", "3"]:
-                    return stage
-        
-        # Fallback: Analyze conversation content for stage indicators
-        return self._analyze_conversation_for_stage(history)
-    
-    def _analyze_conversation_for_stage(self, history: List[ConversationTurnInDB]) -> str:
-        """
-        Analyze conversation content to infer current stage.
-        This is a fallback when metadata is not available.
-        """
-        if not history:
-            return "1"
-        
-        # Check most recent turns for stage indicators
-        recent_content = ""
-        for turn in history[-3:]:  # Last 3 turns
-            recent_content += f" {turn.user_input} {turn.agent_output}".lower()
-        
-        # Stage 3 indicators: plan accepted, implementation started
-        stage3_indicators = [
-            "accept", "approved", "implement", "create plan", 
-            "finalize", "proceed", "start implementation"
-        ]
-        
-        # Stage 2 indicators: plan proposed, refinement happening
-        stage2_indicators = [
-            "proposed plan", "financial plan", "budget plan",
-            "modify", "adjust", "change plan", "refine"
-        ]
-        
-        # Check for stage indicators
-        if any(indicator in recent_content for indicator in stage3_indicators):
-            return "3"
-        elif any(indicator in recent_content for indicator in stage2_indicators):
-            return "2"
-        else:
-            return "1"  # Default to information gathering
-    
-    @staticmethod
-    def create_plan_stage_metadata(stage: str, additional_context: Optional[dict] = None) -> dict:
-        """
-        Create metadata dict for plan agent conversations to be used by orchestrator.
+        Add a new conversation turn to the database.
         
         Args:
-            stage: Current plan stage ("1", "2", or "3")
-            additional_context: Optional additional metadata
+            db: Database connection
+            user_id: User identifier
+            user_input: User's message
+            agent_output: Agent's response
+            agent_list: List of agents involved (optional)
+            tool_call_list: List of tools called (optional)
+            agent_lock: Agent that should lock the conversation (optional)
+            plan_stage: Current plan stage (optional)
             
         Returns:
-            Metadata dict ready for conversation turn
+            Created conversation turn
+            
+        Raises:
+            ValueError: For invalid input parameters
         """
-        metadata = {
-            "plan_stage": stage,
-            "timestamp": datetime.utcnow().isoformat(),
-            "agent_context": "budget_planning"
+        if not user_id or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        if not user_input or not user_input.strip():
+            raise ValueError("User input cannot be empty")
+        if not agent_output or not agent_output.strip():
+            raise ValueError("Agent output cannot be empty")
+        
+        # Validate agent_list if provided
+        if agent_list is not None and not isinstance(agent_list, list):
+            raise ValueError("Agent list must be a list")
+        
+        # Validate tool_call_list if provided
+        if tool_call_list is not None and not isinstance(tool_call_list, list):
+            raise ValueError("Tool call list must be a list")
+        
+        # Validate agent_lock if provided
+        if agent_lock is not None:
+            valid_agents = ["classifier", "jar", "fee", "plan", "fetcher", "knowledge", "orchestrator"]
+            if agent_lock not in valid_agents:
+                raise ValueError(f"Invalid agent lock '{agent_lock}'. Must be one of: {', '.join(valid_agents)}")
+        
+        # Validate plan_stage if provided
+        if plan_stage is not None and not plan_stage.strip():
+            raise ValueError("Plan stage cannot be empty when provided")
+        
+        # Create turn dictionary
+        turn_dict = {
+            "user_input": user_input.strip(),
+            "agent_output": agent_output.strip(),
+            "agent_list": agent_list or [],
+            "tool_call_list": tool_call_list or []
         }
         
-        if additional_context:
-            metadata.update(additional_context)
+        # Add optional fields
+        if agent_lock is not None:
+            turn_dict["agent_lock"] = agent_lock
+        if plan_stage is not None:
+            turn_dict["plan_stage"] = plan_stage.strip()
+        
+        return await conversation_utils.add_conversation_turn_for_user(db, user_id, turn_dict)
+    
+    @staticmethod
+    async def get_conversation_history(db: AsyncIOMotorDatabase, user_id: str, 
+                                     limit: int = 10) -> List[ConversationTurnInDB]:
+        """
+        Get conversation history for a user.
+        
+        Args:
+            db: Database connection
+            user_id: User identifier
+            limit: Maximum number of turns to retrieve (default: 10)
             
-        return metadata
+        Returns:
+            List of conversation turns (oldest first)
+            
+        Raises:
+            ValueError: For invalid input parameters
+        """
+        if not user_id or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        if limit <= 0:
+            raise ValueError("Limit must be greater than 0")
+        if limit > 100:
+            raise ValueError("Limit cannot exceed 100 turns")
+        
+        return await conversation_utils.get_conversation_history_for_user(db, user_id, limit)
+    
+    @staticmethod
+    async def get_agent_lock(db: AsyncIOMotorDatabase, user_id: str) -> Optional[str]:
+        """
+        Get the current agent lock for a user.
+        
+        Args:
+            db: Database connection
+            user_id: User identifier
+            
+        Returns:
+            Agent name that has the lock, or None if no lock
+            
+        Raises:
+            ValueError: For invalid input parameters
+        """
+        if not user_id or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        
+        return await conversation_utils.get_agent_lock_for_user(db, user_id)
+    
+    @staticmethod
+    async def get_plan_stage(db: AsyncIOMotorDatabase, user_id: str) -> Optional[str]:
+        """
+        Get the current plan stage for a user.
+        
+        Args:
+            db: Database connection
+            user_id: User identifier
+            
+        Returns:
+            Current plan stage string, or None if no stage set
+            
+        Raises:
+            ValueError: For invalid input parameters
+        """
+        if not user_id or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        
+        return await conversation_utils.get_plan_stage_for_user(db, user_id)
+    
+    @staticmethod
+    async def get_latest_turn(db: AsyncIOMotorDatabase, user_id: str) -> Optional[ConversationTurnInDB]:
+        """
+        Get the most recent conversation turn for a user.
+        
+        Args:
+            db: Database connection
+            user_id: User identifier
+            
+        Returns:
+            Latest conversation turn, or None if no turns exist
+            
+        Raises:
+            ValueError: For invalid input parameters
+        """
+        if not user_id or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        
+        return await conversation_utils.get_latest_conversation_turn_for_user(db, user_id)

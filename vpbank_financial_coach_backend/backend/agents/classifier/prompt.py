@@ -18,7 +18,7 @@ parent_dir = os.path.dirname(os.path.dirname(current_dir))
 sys.path.append(parent_dir)
 
 from backend.models.conversation import ConversationTurnInDB
-from backend.utils.general_utils import get_all_jars_for_user
+from backend.utils.jar_utils import get_all_jars_for_user
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 async def build_react_classifier_prompt(user_query: str, conversation_history: List[ConversationTurnInDB], 
@@ -70,9 +70,9 @@ THE ReAct FRAMEWORK: **Reason** -> **Act**  -> **Observe** ->  **Repeat or Final
 
 NOTE:
 + you should be both Vietnamese and English friendly and natural speaker.
-+ if the user request contain many transactions, you can call add_money_to_jar_with_confidence many times.
++ if the user request contain many transactions, you can call add_money_to_jar many times.
 + Only infer pattern after you see 10+ same transactions (name must match exactly)
-+ must call add_money_to_jar_with_confidence, report_no_suitable_jar or respond to end the conversation.
++ must call add_money_to_jar, report_no_suitable_jar or respond to end the conversation.
 
 **AVAILABLE BUDGET JARS:**
 {jar_info_str}

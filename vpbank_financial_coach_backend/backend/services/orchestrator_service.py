@@ -1,83 +1,60 @@
 """
-Agent Orchestrator Service - Enhanced Pattern 2 Simplified Interface
-==================================================================
+Orchestrator Service - Standardized Error Handling Interface
+============================================================
 
-Simplified service that directly calls the Enhanced Pattern 2 orchestrator.
+Standardized service that interfaces between chat API endpoint and orchestrator.
+Returns ConversationTurnInDB objects and raises errors for proper HTTP handling.
 """
 
-import logging
-from typing import Dict, Optional, Any
 from motor.motor_asyncio import AsyncIOMotorDatabase
+
+from backend.models.conversation import ConversationTurnInDB
 
 
 class OrchestratorService:
-    """Simplified orchestrator service using Enhanced Pattern 2."""
+    """Standardized orchestrator service with static methods and proper error handling."""
     
-    def __init__(self, db: AsyncIOMotorDatabase, user_id: str):
-        """Initialize orchestrator service for specific user."""
-        self.db = db
-        self.user_id = user_id
-        self.logger = logging.getLogger(__name__)
-    
-    async def process_chat_message(self, message: str) -> Dict[str, Any]:
+    @staticmethod
+    async def process_chat_message(db: AsyncIOMotorDatabase, user_id: str, 
+                                   message: str) -> ConversationTurnInDB:
         """
-        Main chat processing function - direct interface to Enhanced Pattern 2 orchestrator.
+        Main chat processing function - standardized interface to orchestrator.
         
         Args:
+            db: Database connection
+            user_id: User identifier
             message: User's chat message
             
         Returns:
-            Dict containing response and metadata
+            ConversationTurnInDB object containing the complete conversation turn
+            
+        Raises:
+            ValueError: For invalid input parameters or processing errors
         """
+        if not user_id or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        if not message or not message.strip():
+            raise ValueError("Message cannot be empty")
+        
         try:
-            # Import and call Enhanced Pattern 2 orchestrator directly
+            # Import and call orchestrator process_task_async
+            # For now, we'll assume this function exists and returns ConversationTurnInDB
             from backend.agents.orchestrator.main import process_task_async
             
-            # Call the orchestrator with Enhanced Pattern 2
-            result = await process_task_async(message, self.user_id, self.db)
+            # Call the orchestrator - assume it returns ConversationTurnInDB
+            result = await process_task_async(message.strip(), user_id, db)
             
-            # Check if the response indicates an error
-            response_text = result["response"]
-            is_error = self._is_error_response(response_text)
+            # Validate the result is a ConversationTurnInDB object
+            if not isinstance(result, ConversationTurnInDB):
+                raise ValueError("Orchestrator returned invalid response type")
             
-            return {
-                "response": response_text,
-                "requires_follow_up": result.get("requires_follow_up", False),
-                "success": not is_error
-            }
+            return result
             
+        except ImportError as e:
+            # Handle case where orchestrator main module doesn't exist yet
+            raise ValueError(f"Orchestrator module not available: {str(e)}")
         except Exception as e:
-            self.logger.error(f"Orchestrator error for user {self.user_id}: {str(e)}")
-            return {
-                "response": f"❌ I encountered an error processing your request: {str(e)}",
-                "requires_follow_up": False,
-                "success": False
-            }
-    
-    def _is_error_response(self, response: str) -> bool:
-        """
-        Detect if a response indicates an error condition.
-        
-        Args:
-            response: The agent response text
-            
-        Returns:
-            True if the response indicates an error, False otherwise
-        """
-        if not response:
-            return True
-            
-        error_indicators = [
-            "❌",
-            "Error",
-            "could not provide a complete answer within the allowed steps",
-            "Agent loop completed without a final answer",
-            "Failed to process"
-        ]
-        
-        response_lower = response.lower()
-        for indicator in error_indicators:
-            if indicator.lower() in response_lower:
-                return True
-                
-        return False
+            # Handle any orchestrator processing errors
+            raise ValueError(f"Orchestrator processing failed: {str(e)}")

@@ -56,9 +56,24 @@ def get_stage1_tools(services: PlanServiceContainer) -> List[tool]:
         Returns:
             A dictionary containing the fetched transaction data and a summary.
         """
-        return await AgentCommunicationService.call_transaction_fetcher(
-            services.db, services.user_id, user_query=user_query, description=description
-        )
+        try:
+            return await AgentCommunicationService.call_transaction_fetcher(
+                services.db, services.user_id, user_query=user_query, description=description
+            )
+        except ValueError as e:
+            # Service validation errors
+            return {
+                "data": [],
+                "error": f"Failed to fetch transactions: {str(e)}",
+                "description": f"Error while {description}" if description else "Error fetching transactions"
+            }
+        except Exception as e:
+            # Unexpected errors
+            return {
+                "data": [],
+                "error": f"An unexpected error occurred: {str(e)}",
+                "description": f"Error while {description}" if description else "Unexpected error fetching transactions"
+            }
 
     @tool
     async def get_jar(jar_name: Optional[str] = None, description: str = "") -> Dict[str, Any]:
@@ -75,9 +90,24 @@ def get_stage1_tools(services: PlanServiceContainer) -> List[tool]:
         Returns:
             A dictionary containing the jar details, including balances and allocations.
         """
-        return await JarManagementService.get_jars(
-            services.db, services.user_id, jar_name=jar_name, description=description
-        )
+        try:
+            return await JarManagementService.get_jars(
+                services.db, services.user_id, jar_name=jar_name, description=description
+            )
+        except ValueError as e:
+            # Service validation errors
+            return {
+                "data": [],
+                "error": f"Failed to get jar information: {str(e)}",
+                "description": f"Error while {description}" if description else "Error getting jar information"
+            }
+        except Exception as e:
+            # Unexpected errors
+            return {
+                "data": [],
+                "error": f"An unexpected error occurred: {str(e)}",
+                "description": f"Error while {description}" if description else "Unexpected error getting jar information"
+            }
 
     @tool
     async def get_plan(status: str = "active", description: str = "") -> Dict[str, Any]:
@@ -96,9 +126,24 @@ def get_stage1_tools(services: PlanServiceContainer) -> List[tool]:
         Returns:
             A dictionary containing a list of plans and a summary.
         """
-        return await PlanManagementService.get_plan(
-            services.db, services.user_id, status=status, description=description
-        )
+        try:
+            return await PlanManagementService.get_plan(
+                services.db, services.user_id, status=status, description=description
+            )
+        except ValueError as e:
+            # Service validation errors
+            return {
+                "data": [],
+                "error": f"Failed to get plan information: {str(e)}",
+                "description": f"Error while {description}" if description else "Error getting plan information"
+            }
+        except Exception as e:
+            # Unexpected errors
+            return {
+                "data": [],
+                "error": f"An unexpected error occurred: {str(e)}",
+                "description": f"Error while {description}" if description else "Unexpected error getting plan information"
+            }
 
     @tool
     def request_clarification(question: str, suggestion: Optional[str] = None) -> Dict[str, Any]:
@@ -118,7 +163,7 @@ def get_stage1_tools(services: PlanServiceContainer) -> List[tool]:
         response = f"❓ {question}"
         if suggestion:
             response += f"\n💡 {suggestion}"
-        return {"response": response, "requires_follow_up": True, "stage": "1"}
+        return {"response": response, "requires_follow_up": True, "plan_stage": "1"}
 
     @tool
     def propose_plan(financial_plan: str, jar_changes: str) -> Dict[str, Any]:
@@ -131,7 +176,7 @@ def get_stage1_tools(services: PlanServiceContainer) -> List[tool]:
             jar_changes: A detailed proposal for changes to jars aligned with financial_plan, such as new allocations or adjustments to existing jars.
         """
         # This tool's output is handled specially in main.py to format the two parts
-        return {"financial_plan": financial_plan, "jar_changes": jar_changes, "requires_follow_up": True, "stage": "2"}
+        return {"financial_plan": financial_plan, "jar_changes": jar_changes, "requires_follow_up": True, "plan_stage": "2"}
 
 
     return [transaction_fetcher, get_jar, get_plan, request_clarification, propose_plan]
@@ -158,9 +203,24 @@ def get_stage2_tools(services: PlanServiceContainer) -> List[tool]:
         Returns:
             A dictionary containing the fetched transaction data and a summary.
         """
-        return await AgentCommunicationService.call_transaction_fetcher(
-            services.db, services.user_id, user_query=user_query, description=description
-        )
+        try:
+            return await AgentCommunicationService.call_transaction_fetcher(
+                services.db, services.user_id, user_query=user_query, description=description
+            )
+        except ValueError as e:
+            # Service validation errors
+            return {
+                "data": [],
+                "error": f"Failed to fetch transactions: {str(e)}",
+                "description": f"Error while {description}" if description else "Error fetching transactions"
+            }
+        except Exception as e:
+            # Unexpected errors
+            return {
+                "data": [],
+                "error": f"An unexpected error occurred: {str(e)}",
+                "description": f"Error while {description}" if description else "Unexpected error fetching transactions"
+            }
 
     @tool
     async def get_jar(jar_name: Optional[str] = None) -> Dict[str, Any]:
@@ -173,9 +233,24 @@ def get_stage2_tools(services: PlanServiceContainer) -> List[tool]:
             jar_name: The specific name of a jar to query. Example: "Savings", "Necessities".
                     If not provided, all jars are returned.
         """
-        return await JarManagementService.get_jars(
-            services.db, services.user_id, jar_name=jar_name
-        )
+        try:
+            return await JarManagementService.get_jars(
+                services.db, services.user_id, jar_name=jar_name
+            )
+        except ValueError as e:
+            # Service validation errors
+            return {
+                "data": [],
+                "error": f"Failed to get jar information: {str(e)}",
+                "description": "Error getting jar information"
+            }
+        except Exception as e:
+            # Unexpected errors
+            return {
+                "data": [],
+                "error": f"An unexpected error occurred: {str(e)}",
+                "description": "Unexpected error getting jar information"
+            }
 
     @tool
     async def get_plan(status: str = "active", description: str = "") -> Dict[str, Any]:
@@ -194,9 +269,24 @@ def get_stage2_tools(services: PlanServiceContainer) -> List[tool]:
         Returns:
             A dictionary containing a list of plans and a summary.
         """
-        return await PlanManagementService.get_plan(
-            services.db, services.user_id, status=status, description=description
-        )
+        try:
+            return await PlanManagementService.get_plan(
+                services.db, services.user_id, status=status, description=description
+            )
+        except ValueError as e:
+            # Service validation errors
+            return {
+                "data": [],
+                "error": f"Failed to get plan information: {str(e)}",
+                "description": f"Error while {description}" if description else "Error getting plan information"
+            }
+        except Exception as e:
+            # Unexpected errors
+            return {
+                "data": [],
+                "error": f"An unexpected error occurred: {str(e)}",
+                "description": f"Error while {description}" if description else "Unexpected error getting plan information"
+            }
 
     @tool
     def propose_plan(financial_plan: str, jar_changes: str) -> Dict[str, Any]:
@@ -209,7 +299,7 @@ def get_stage2_tools(services: PlanServiceContainer) -> List[tool]:
             jar_changes: A detailed proposal for changes to jars aligned with financial_plan, such as new allocations or adjustments to existing jars.
         """
         # This tool's output is handled specially in main.py to format the two parts
-        return {"financial_plan": financial_plan, "jar_changes": jar_changes, "requires_follow_up": True, "stage": "2"}
+        return {"financial_plan": financial_plan, "jar_changes": jar_changes, "requires_follow_up": True, "plan_stage": "2"}
 
 
     return [transaction_fetcher, get_jar, get_plan, propose_plan]
@@ -234,21 +324,40 @@ def get_stage3_tools(services: PlanServiceContainer) -> List[tool]:
         Returns:
             A standardized dictionary with a success message, the plan details, and state flags for the orchestrator.
         """
-        result = await PlanManagementService.create_plan(
-            services.db, services.user_id, 
-            name=name,
-            description=description,
-            status="active",
-            jar_propose_adjust_details=jar_changes
-        )
-        
-        # The tool now creates the full response object for the orchestrator
-        return {
-            "response": f"✅ Your plan '{name}' has been created successfully!",
-            "plan_details": result,
-            "requires_follow_up": False,
-            "stage": "3"
-        }
+        try:
+            result = await PlanManagementService.create_plan(
+                services.db, services.user_id, 
+                name=name,
+                description=description,
+                status="active",
+                jar_propose_adjust_details=jar_changes
+            )
+            
+            # The tool now creates the full response object for the orchestrator
+            return {
+                "response": f"✅ Your plan '{name}' has been created successfully!",
+                "plan_details": result,
+                "requires_follow_up": False,
+                "plan_stage": "3"
+            }
+        except ValueError as e:
+            # Service validation errors
+            return {
+                "response": f"❌ Failed to create plan '{name}': {str(e)}",
+                "plan_details": None,
+                "requires_follow_up": False,
+                "plan_stage": "3",
+                "error": str(e)
+            }
+        except Exception as e:
+            # Unexpected errors
+            return {
+                "response": f"❌ An unexpected error occurred while creating plan '{name}': {str(e)}",
+                "plan_details": None,
+                "requires_follow_up": False,
+                "plan_stage": "3",
+                "error": str(e)
+            }
 
     @tool
     async def adjust_plan(name: str,  description: str, jar_changes: str, status: Optional[str] = "active") -> Dict[str, Any]:
@@ -266,20 +375,39 @@ def get_stage3_tools(services: PlanServiceContainer) -> List[tool]:
         Returns:
             A standardized dictionary with a success message, the plan details, and state flags for the orchestrator.
         """
-        result = await PlanManagementService.adjust_plan(
-            services.db, services.user_id,
-            name=name,
-            description=description,
-            status=status,
-            jar_propose_adjust_details=jar_changes
-        )
-        
-        return {
-            "response": f"✅ Your plan '{name}' has been adjusted successfully!",
-            "plan_details": result,
-            "requires_follow_up": False,
-            "stage": "3"
-        }
+        try:
+            result = await PlanManagementService.adjust_plan(
+                services.db, services.user_id,
+                name=name,
+                description=description,
+                status=status,
+                jar_propose_adjust_details=jar_changes
+            )
+            
+            return {
+                "response": f"✅ Your plan '{name}' has been adjusted successfully!",
+                "plan_details": result,
+                "requires_follow_up": False,
+                "plan_stage": "3"
+            }
+        except ValueError as e:
+            # Service validation errors
+            return {
+                "response": f"❌ Failed to adjust plan '{name}': {str(e)}",
+                "plan_details": None,
+                "requires_follow_up": False,
+                "plan_stage": "3",
+                "error": str(e)
+            }
+        except Exception as e:
+            # Unexpected errors
+            return {
+                "response": f"❌ An unexpected error occurred while adjusting plan '{name}': {str(e)}",
+                "plan_details": None,
+                "requires_follow_up": False,
+                "plan_stage": "3",
+                "error": str(e)
+            }
 
     return [create_plan, adjust_plan]
 

@@ -70,13 +70,16 @@ def get_all_fee_tools(services: FeeServiceContainer) -> List[tool]:
         Returns:
             Formatted clarification request
         """
-        # Note: Conversation locking handled by orchestrator in backend
-        
-        response = f"{question}"
-        if suggestions:
-            response += f"\n\nSuggestions: {suggestions}"
-        
-        return response
+        try:
+            # Note: Conversation locking handled by orchestrator in backend
+            response = f"{question}"
+            if suggestions:
+                response += f"\n\nSuggestions: {suggestions}"
+            
+            return response
+        except Exception as e:
+            # Handle any unexpected errors in formatting
+            return f"❌ Error asking for clarification: {str(e)}"
 
     # =============================================================================
     # FEE MANAGEMENT TOOLS - SERVICE INTEGRATED
@@ -106,10 +109,17 @@ def get_all_fee_tools(services: FeeServiceContainer) -> List[tool]:
             target_jar: Which jar this fee should come from (Agent should reason based on the jar provided)
             confidence: Confidence in the decision (0-100)
         """
-        return await FeeManagementService.create_recurring_fee(
-            services.db, services.user_id, name, amount, description, 
-            pattern_type, pattern_details, target_jar, confidence
-        )
+        try:
+            return await FeeManagementService.create_recurring_fee(
+                services.db, services.user_id, name, amount, description, 
+                pattern_type, pattern_details, target_jar, confidence
+            )
+        except ValueError as e:
+            # Service validation errors
+            return f"❌ Failed to create recurring fee: {str(e)}"
+        except Exception as e:
+            # Unexpected errors
+            return f"❌ An unexpected error occurred while creating fee: {str(e)}"
 
     @tool
     async def adjust_recurring_fee(
@@ -135,10 +145,17 @@ def get_all_fee_tools(services: FeeServiceContainer) -> List[tool]:
             disable: Set to True to disable the fee
             confidence: LLM confidence (0-100)
         """
-        return await FeeManagementService.adjust_recurring_fee(
-            services.db, services.user_id, fee_name, new_amount, new_description,
-            new_pattern_type, new_pattern_details, new_target_jar, disable, confidence
-        )
+        try:
+            return await FeeManagementService.adjust_recurring_fee(
+                services.db, services.user_id, fee_name, new_amount, new_description,
+                new_pattern_type, new_pattern_details, new_target_jar, disable, confidence
+            )
+        except ValueError as e:
+            # Service validation errors
+            return f"❌ Failed to adjust recurring fee: {str(e)}"
+        except Exception as e:
+            # Unexpected errors
+            return f"❌ An unexpected error occurred while adjusting fee: {str(e)}"
 
     @tool
     async def delete_recurring_fee(fee_name: str, reason: str) -> str:
@@ -149,7 +166,14 @@ def get_all_fee_tools(services: FeeServiceContainer) -> List[tool]:
             fee_name: Name of fee to delete
             reason: Reason for deletion
         """
-        return await FeeManagementService.delete_recurring_fee(services.db, services.user_id, fee_name, reason)
+        try:
+            return await FeeManagementService.delete_recurring_fee(services.db, services.user_id, fee_name, reason)
+        except ValueError as e:
+            # Service validation errors
+            return f"❌ Failed to delete recurring fee: {str(e)}"
+        except Exception as e:
+            # Unexpected errors
+            return f"❌ An unexpected error occurred while deleting fee: {str(e)}"
 
     @tool
     async def list_recurring_fees(active_only: bool = True, target_jar: Optional[str] = None) -> str:
@@ -161,7 +185,14 @@ def get_all_fee_tools(services: FeeServiceContainer) -> List[tool]:
             active_only: Only show active fees if True
             target_jar: Optional jar name to filter by
         """
-        return await FeeManagementService.list_recurring_fees(services.db, services.user_id, active_only, target_jar)
+        try:
+            return await FeeManagementService.list_recurring_fees(services.db, services.user_id, active_only, target_jar)
+        except ValueError as e:
+            # Service validation errors
+            return f"❌ Failed to list recurring fees: {str(e)}"
+        except Exception as e:
+            # Unexpected errors
+            return f"❌ An unexpected error occurred while listing fees: {str(e)}"
 
     # =============================================================================
     # TOOL REGISTRATION

@@ -9,7 +9,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, Tool
 
 # Import backend components
 from backend.core.config import settings
-from backend.models.conversation import ConversationTurnCreate
+from backend.models.conversation import ConversationTurnInDB
 from backend.services.conversation_service import ConversationService
 from .prompt import build_orchestrator_prompt
 from .tools import get_all_orchestrator_tools, OrchestratorServiceContainer
@@ -27,32 +27,49 @@ class OrchestratorAgent:
             temperature=0.1,
             google_api_key=settings.GOOGLE_API_KEY
         )
-        self.conversation_service = ConversationService(self.db, self.user_id)
 
     async def _get_tools(self) -> List:
-        history = await self.conversation_service.get_conversation_history(limit=MAX_MEMORY_TURNS)
+        history = await ConversationService.get_conversation_history(self.db, self.user_id, limit=MAX_MEMORY_TURNS)
         services = OrchestratorServiceContainer(self.db, self.user_id, history)
         return get_all_orchestrator_tools(services)
 
     async def process_request(self, task: str) -> Dict[str, Any]:
         """Processes the user's request by routing it to the correct tool."""
         try:
+            # Validate input
+            if not task or not task.strip():
+                raise ValueError("Task cannot be empty")
+            
             tools = await self._get_tools()
             llm_with_tools = self.llm.bind_tools(tools)
 
-            history = await self.conversation_service.get_conversation_history(limit=MAX_MEMORY_TURNS)
-            locked_agent = await self.conversation_service.check_conversation_lock()
+            history = await ConversationService.get_conversation_history(self.db, self.user_id, limit=MAX_MEMORY_TURNS)
+            locked_agent = await ConversationService.get_agent_lock(self.db, self.user_id)
 
-            # If locked to an agent, route directly
+            # If locked to an agent, route directly to that agent
             if locked_agent:
-                tool_to_call = next((t for t in tools if t.name == f"route_to_{locked_agent}"), None)
-                if tool_to_call:
-                    result = await tool_to_call.ainvoke({"task_description": task})
-                    if not result.get("requires_follow_up", False):
-                        await self.conversation_service.release_conversation_lock()
-                    return result
+                # Map agent names to tool names
+                agent_tool_mapping = {
+                    "classifier": "route_to_transaction_classifier",
+                    "jar": "route_to_jar_manager", 
+                    "fee": "route_to_fee_manager",
+                    "plan": "route_to_budget_advisor",
+                    "fetcher": "route_to_insight_generator",
+                    "knowledge": "route_to_knowledge_base"
+                }
+                
+                tool_name = agent_tool_mapping.get(locked_agent)
+                if tool_name:
+                    tool_to_call = next((t for t in tools if t.name == tool_name), None)
+                    if tool_to_call:
+                        try:
+                            result = await tool_to_call.ainvoke({"task_description": task})
+                            return result
+                        except Exception as e:
+                            # Tool execution failed, return error but keep trying with LLM routing
+                            print(f"Direct routing to {locked_agent} failed: {e}")
 
-            # Build prompt and invoke LLM
+            # Build prompt and invoke LLM for routing decision
             prompt = build_orchestrator_prompt(task, history)
             messages = [SystemMessage(content=prompt), HumanMessage(content=task)]
             response = await llm_with_tools.ainvoke(messages)
@@ -69,37 +86,80 @@ class OrchestratorAgent:
             if not tool_func:
                 return {"response": f"Error: Could not find tool '{tool_name}'.", "requires_follow_up": False}
             
-            result = await tool_func.ainvoke(tool_args)
+            try:
+                result = await tool_func.ainvoke(tool_args)
+                return result
+            except Exception as e:
+                # Handle tool execution errors gracefully
+                return {"response": f"I encountered an error while processing your request: {str(e)}", "requires_follow_up": False}
 
-            # Set lock if the tool's response indicates a follow-up is needed
-            if result.get("requires_follow_up", False):
-                # Infer agent name from tool name for locking
-                if "route_to_" in tool_name:
-                    agent_to_lock = tool_name.replace("route_to_", "")
-                    await self.conversation_service.lock_conversation_to_agent(agent_to_lock)
-            
-            return result
-
+        except ValueError as e:
+            # Handle validation errors
+            return {"response": f"Invalid request: {str(e)}", "requires_follow_up": False}
         except Exception as e:
             traceback.print_exc()
-            return {"response": f"An unexpected error occurred in the orchestrator: {str(e)}", "requires_follow_up": False}
+            return {"response": f"An unexpected error occurred: {str(e)}", "requires_follow_up": False}
 
-async def process_task_async(task: str, user_id: str, db: AsyncIOMotorDatabase) -> Dict[str, Any]:
+async def process_task_async(task: str, user_id: str, db: AsyncIOMotorDatabase) -> ConversationTurnInDB:
     """
     Main async entry point for orchestrator processing.
+    Returns ConversationTurnInDB for the orchestrator service.
     """
-    agent = OrchestratorAgent(db, user_id)
-    result = await agent.process_request(task)
+    try:
+        # Validate required parameters
+        if not task or not task.strip():
+            raise ValueError("Task cannot be empty")
+        if not user_id or not user_id.strip():
+            raise ValueError("User ID cannot be empty") 
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        
+        # Process the request
+        agent = OrchestratorAgent(db, user_id)
+        result = await agent.process_request(task.strip())
 
-    # Log the full conversation turn
-    conversation_service = ConversationService(db, user_id)
-    turn_data = ConversationTurnCreate(
-        user_input=task,
-        agent_output=result.get("response", "No response generated."),
-        agent_list=['orchestrator'], # Simplified logging
-        tool_call_list=[], # Tool calls are now an implementation detail of the agent
-        metadata=result.get("metadata", {})
-    )
-    await conversation_service.add_conversation_turn(turn_data)
+        # Extract standardized fields from agent response
+        agent_output = result.get("response", "No response generated.")
+        agent_lock = result.get("agent_lock")  # From standardized agent return format
+        plan_stage = result.get("plan_stage")  # From plan agent return format
+        tool_calls = result.get("tool_calls", [])
 
-    return result
+        # Create and save conversation turn with proper agent lock and plan stage
+        conversation_turn = await ConversationService.add_conversation_turn(
+            db=db,
+            user_id=user_id,
+            user_input=task.strip(),
+            agent_output=agent_output,
+            agent_list=['orchestrator'],
+            tool_call_list=tool_calls,
+            agent_lock=agent_lock,  # Set lock from agent response
+            plan_stage=plan_stage   # Set plan stage from agent response
+        )
+
+        return conversation_turn
+        
+    except ValueError as e:
+        # Handle validation errors - create error conversation turn
+        error_response = f"Invalid request: {str(e)}"
+        return await ConversationService.add_conversation_turn(
+            db=db,
+            user_id=user_id or "unknown",
+            user_input=task or "invalid task",
+            agent_output=error_response,
+            agent_list=['orchestrator'],
+            tool_call_list=[]
+        )
+        
+    except Exception as e:
+        # Handle unexpected errors - create error conversation turn  
+        traceback.print_exc()
+        error_response = f"An unexpected error occurred: {str(e)}"
+        
+        return await ConversationService.add_conversation_turn(
+            db=db,
+            user_id=user_id or "unknown", 
+            user_input=task or "error task",
+            agent_output=error_response,
+            agent_list=['orchestrator'],
+            tool_call_list=[]
+        )

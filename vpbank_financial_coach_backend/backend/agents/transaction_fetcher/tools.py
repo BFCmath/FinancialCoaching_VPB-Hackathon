@@ -80,9 +80,24 @@ def get_all_transaction_tools(services: TransactionFetcherServiceContainer) -> L
             - "All my spending" → jar_name=None, description="all my transactions"
             - "Play transactions" → jar_name="play", description="play expenses"
         """
-        return await TransactionQueryService.get_jar_transactions(
-            services.db, services.user_id, jar_name=jar_name, limit=limit, description=description
-        )
+        try:
+            return await TransactionQueryService.get_jar_transactions(
+                services.db, services.user_id, jar_name=jar_name, limit=limit, description=description
+            )
+        except ValueError as e:
+            # Service validation errors
+            return {
+                "data": [],
+                "error": f"Failed to fetch jar transactions: {str(e)}",
+                "description": f"Error while {description}" if description else "Error fetching jar transactions"
+            }
+        except Exception as e:
+            # Unexpected errors
+            return {
+                "data": [],
+                "error": f"An unexpected error occurred: {str(e)}",
+                "description": f"Error while {description}" if description else "Unexpected error fetching jar transactions"
+            }
 
     @tool
     async def get_time_period_transactions(jar_name: Optional[str] = None, start_date: str = "last_month", end_date: Optional[str] = None, limit: int = 50, description: str = "") -> Dict[str, Any]:
@@ -119,9 +134,24 @@ def get_all_transaction_tools(services: TransactionFetcherServiceContainer) -> L
             - "All spending this month" → jar_name=None, start_date="this_month"
             - "Play expenses from March 1st to March 15th" → jar_name="play", start_date="2024-03-01", end_date="2024-03-15"
         """
-        return await TransactionQueryService.get_time_period_transactions(
-            services.db, services.user_id, jar_name=jar_name, start_date=start_date, end_date=end_date, limit=limit, description=description
-        )
+        try:
+            return await TransactionQueryService.get_time_period_transactions(
+                services.db, services.user_id, jar_name=jar_name, start_date=start_date, end_date=end_date, limit=limit, description=description
+            )
+        except ValueError as e:
+            # Service validation errors
+            return {
+                "data": [],
+                "error": f"Failed to fetch time period transactions: {str(e)}",
+                "description": f"Error while {description}" if description else "Error fetching time period transactions"
+            }
+        except Exception as e:
+            # Unexpected errors
+            return {
+                "data": [],
+                "error": f"An unexpected error occurred: {str(e)}",
+                "description": f"Error while {description}" if description else "Unexpected error fetching time period transactions"
+            }
 
     @tool
     async def get_amount_range_transactions(jar_name: Optional[str] = None, min_amount: Optional[float] = None, max_amount: Optional[float] = None, limit: int = 50, description: str = "") -> Dict[str, Any]:
@@ -158,9 +188,24 @@ def get_all_transaction_tools(services: TransactionFetcherServiceContainer) -> L
             - "Mid-range spending" → min_amount=20.0, max_amount=100.0
             - "All expensive purchases" → min_amount=200.0
         """
-        return await TransactionQueryService.get_amount_range_transactions(
-            services.db, services.user_id, jar_name=jar_name, min_amount=min_amount, max_amount=max_amount, limit=limit, description=description
-        )
+        try:
+            return await TransactionQueryService.get_amount_range_transactions(
+                services.db, services.user_id, jar_name=jar_name, min_amount=min_amount, max_amount=max_amount, limit=limit, description=description
+            )
+        except ValueError as e:
+            # Service validation errors
+            return {
+                "data": [],
+                "error": f"Failed to fetch amount range transactions: {str(e)}",
+                "description": f"Error while {description}" if description else "Error fetching amount range transactions"
+            }
+        except Exception as e:
+            # Unexpected errors
+            return {
+                "data": [],
+                "error": f"An unexpected error occurred: {str(e)}",
+                "description": f"Error while {description}" if description else "Unexpected error fetching amount range transactions"
+            }
 
     @tool
     async def get_hour_range_transactions(jar_name: Optional[str] = None, start_hour: int = 6, end_hour: int = 22, limit: int = 50, description: str = "") -> Dict[str, Any]:
@@ -197,9 +242,24 @@ def get_all_transaction_tools(services: TransactionFetcherServiceContainer) -> L
             - "Evening play activities" → jar_name="play", start_hour=18, end_hour=23
             - "Business hours spending" → start_hour=9, end_hour=17
         """
-        return await TransactionQueryService.get_hour_range_transactions(
-            services.db, services.user_id, jar_name=jar_name, start_hour=start_hour, end_hour=end_hour, limit=limit, description=description
-        )
+        try:
+            return await TransactionQueryService.get_hour_range_transactions(
+                services.db, services.user_id, jar_name=jar_name, start_hour=start_hour, end_hour=end_hour, limit=limit, description=description
+            )
+        except ValueError as e:
+            # Service validation errors
+            return {
+                "data": [],
+                "error": f"Failed to fetch hour range transactions: {str(e)}",
+                "description": f"Error while {description}" if description else "Error fetching hour range transactions"
+            }
+        except Exception as e:
+            # Unexpected errors
+            return {
+                "data": [],
+                "error": f"An unexpected error occurred: {str(e)}",
+                "description": f"Error while {description}" if description else "Unexpected error fetching hour range transactions"
+            }
 
     @tool
     async def get_source_transactions(jar_name: Optional[str] = None, source_type: str = "vpbank_api", limit: int = 50, description: str = "") -> Dict[str, Any]:
@@ -235,9 +295,24 @@ def get_all_transaction_tools(services: TransactionFetcherServiceContainer) -> L
             - "Scanned receipts" → source_type="image_input"
             - "Voice input transactions" → source_type="text_input"
         """
-        return await TransactionQueryService.get_source_transactions(
-            services.db, services.user_id, jar_name=jar_name, source_type=source_type, limit=limit, description=description
-        )
+        try:
+            return await TransactionQueryService.get_source_transactions(
+                services.db, services.user_id, jar_name=jar_name, source_type=source_type, limit=limit, description=description
+            )
+        except ValueError as e:
+            # Service validation errors
+            return {
+                "data": [],
+                "error": f"Failed to fetch source transactions: {str(e)}",
+                "description": f"Error while {description}" if description else "Error fetching source transactions"
+            }
+        except Exception as e:
+            # Unexpected errors
+            return {
+                "data": [],
+                "error": f"An unexpected error occurred: {str(e)}",
+                "description": f"Error while {description}" if description else "Unexpected error fetching source transactions"
+            }
 
     @tool
     async def get_complex_transaction(
@@ -327,11 +402,26 @@ def get_all_transaction_tools(services: TransactionFetcherServiceContainer) -> L
         3. "Morning necessity shopping under $100 from bank data"
         → jar_name="necessities", start_hour=6, end_hour=12, max_amount=100, source_type="vpbank_api", description="morning necessity shopping under $100 from bank"
         """
-        return await TransactionQueryService.get_complex_transaction(
-            services.db, services.user_id, jar_name=jar_name, start_date=start_date, end_date=end_date,
-            min_amount=min_amount, max_amount=max_amount, start_hour=start_hour,
-            end_hour=end_hour, source_type=source_type, limit=limit, description=description
-        )
+        try:
+            return await TransactionQueryService.get_complex_transaction(
+                services.db, services.user_id, jar_name=jar_name, start_date=start_date, end_date=end_date,
+                min_amount=min_amount, max_amount=max_amount, start_hour=start_hour,
+                end_hour=end_hour, source_type=source_type, limit=limit, description=description
+            )
+        except ValueError as e:
+            # Service validation errors
+            return {
+                "data": [],
+                "error": f"Failed to fetch complex transaction query: {str(e)}",
+                "description": f"Error while {description}" if description else "Error executing complex transaction query"
+            }
+        except Exception as e:
+            # Unexpected errors
+            return {
+                "data": [],
+                "error": f"An unexpected error occurred: {str(e)}",
+                "description": f"Error while {description}" if description else "Unexpected error executing complex transaction query"
+            }
 
     return [
         get_jar_transactions,

@@ -11,15 +11,13 @@ Covers all recurring fee operations from lab utils.py and service.py:
 All methods are async where appropriate.
 """
 
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 # Import database utilities and models
-from backend.utils import general_utils
-from backend.models.fee import RecurringFeeInDB, RecurringFeeCreate, RecurringFeeBase
-from .core_services import CalculationService
-from .confidence_service import ConfidenceService
+from backend.utils import fee_utils, jar_utils, general_utils
+from backend.models.fee import RecurringFeeInDB, RecurringFeeCreate
 
 class FeeManagementService:
     """
@@ -29,17 +27,31 @@ class FeeManagementService:
     @staticmethod
     async def save_recurring_fee(db: AsyncIOMotorDatabase, user_id: str, fee_data: RecurringFeeCreate) -> RecurringFeeInDB:
         """Save recurring fee to database."""
-        return await general_utils.create_fee_in_db(db, user_id, fee_data)
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        return await fee_utils.create_fee_in_db(db, user_id, fee_data)
     
     @staticmethod
     async def get_recurring_fee(db: AsyncIOMotorDatabase, user_id: str, fee_name: str) -> Optional[RecurringFeeInDB]:
         """Get recurring fee by name."""
-        return await general_utils.get_fee_by_name(db, user_id, fee_name)
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        if fee_name is None or not fee_name.strip():
+            raise ValueError("Fee name cannot be empty")
+        return await fee_utils.get_fee_by_name(db, user_id, fee_name)
     
     @staticmethod
     async def get_all_recurring_fees(db: AsyncIOMotorDatabase, user_id: str) -> List[RecurringFeeInDB]:
         """Get all recurring fees."""
-        return await general_utils.get_all_fees_for_user(db, user_id)
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        return await fee_utils.get_all_fees_for_user(db, user_id)
     
     @staticmethod
     async def get_active_recurring_fees(db: AsyncIOMotorDatabase, user_id: str) -> List[RecurringFeeInDB]:
@@ -50,7 +62,13 @@ class FeeManagementService:
     @staticmethod
     async def delete_recurring_fee(db: AsyncIOMotorDatabase, user_id: str, fee_name: str) -> bool:
         """Delete recurring fee from database."""
-        return await general_utils.delete_fee_by_name(db, user_id, fee_name)
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        if fee_name is None or not fee_name.strip():
+            raise ValueError("Fee name cannot be empty")
+        return await fee_utils.delete_fee_by_name(db, user_id, fee_name)
     
     @staticmethod
     def calculate_next_fee_occurrence(pattern_type: str, pattern_details: Optional[List[int]], from_date: Optional[datetime] = None) -> datetime:
@@ -101,6 +119,11 @@ class FeeManagementService:
     @staticmethod
     async def get_fees_due_today(db: AsyncIOMotorDatabase, user_id: str) -> List[RecurringFeeInDB]:
         """Get fees that are due today."""
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+            
         active_fees = await FeeManagementService.get_active_recurring_fees(db, user_id)
         today = datetime.now().date()
         return [f for f in active_fees if f.next_occurrence.date() <= today]
@@ -108,26 +131,30 @@ class FeeManagementService:
     @staticmethod
     async def create_recurring_fee(db: AsyncIOMotorDatabase, user_id: str, 
                                    name: str, amount: float, description: str, pattern_type: str,
-                                   pattern_details: Optional[List[int]], target_jar: str, 
-                                   confidence: int = 85) -> str:
+                                   pattern_details: Optional[List[int]], target_jar: str) -> str:
         """Create recurring fee with scheduling."""
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        if name is None or not name.strip():
+            raise ValueError("Fee name cannot be empty")
+        if amount <= 0:
+            raise ValueError(f"Amount must be positive, got {amount}")
+        if pattern_type not in ["daily", "weekly", "monthly"]:
+            raise ValueError(f"Pattern type must be 'daily', 'weekly', or 'monthly', got '{pattern_type}'")
+            
         # Validate fee name
-        is_valid, error_msg = await FeeManagementService._validate_fee_name(db, user_id, name)
-        if not is_valid:
-            return f"❌ {error_msg}"
+        await FeeManagementService._validate_fee_name(db, user_id, name)
         
         # Validate target jar
-        jar = await general_utils.get_jar_by_name(db, user_id, target_jar.lower().replace(' ', '_'))
+        jar = await jar_utils.get_jar_by_name(db, user_id, target_jar.lower().replace(' ', '_'))
         if not jar:
-            return f"❌ Target jar '{target_jar}' not found"
+            raise ValueError(f"Target jar '{target_jar}' not found")
         
         # Validate amount
-        if not CalculationService.validate_positive_amount(amount):
-            return f"❌ Amount must be positive, got {CalculationService.format_currency(amount)}"
-        
-        # Validate pattern type
-        if pattern_type not in ["daily", "weekly", "monthly"]:
-            return f"❌ Pattern type must be 'daily', 'weekly', or 'monthly', got '{pattern_type}'"
+        if not general_utils.validate_positive_amount(amount):
+            raise ValueError(f"Amount must be positive, got {general_utils.format_currency(amount)}")
         
         next_occurrence = FeeManagementService.calculate_next_fee_occurrence(pattern_type, pattern_details)
         
@@ -140,106 +167,130 @@ class FeeManagementService:
             pattern_details=pattern_details or [],
         )
 
-        fee_dict_for_db = fee_to_create.dict()
+        fee_dict_for_db = fee_to_create.model_dump()  # Fixed: use model_dump() instead of dict()
         fee_dict_for_db["user_id"] = user_id
         fee_dict_for_db["next_occurrence"] = next_occurrence
         fee_dict_for_db["created_date"] = datetime.utcnow()
         fee_dict_for_db["is_active"] = True
         
-        await general_utils.create_fee_in_db(db, fee_dict_for_db)
+        created_fee = await fee_utils.create_fee_in_db(db, fee_dict_for_db)  # Fixed: correct function signature
+        if not created_fee:
+            raise ValueError("Failed to create fee in database")
 
-        
         pattern_desc = FeeManagementService._format_pattern_description(pattern_type, pattern_details)
-        result = f"Created recurring fee '{name}': {CalculationService.format_currency(amount)} {pattern_desc} → {jar.name} jar. Next: {next_occurrence.strftime('%Y-%m-%d')}"
-        return ConfidenceService.format_confidence_response(result, confidence)
-    
+        result = f"Created recurring fee '{name}': {general_utils.format_currency(amount)} {pattern_desc} → {jar.name} jar. Next: {next_occurrence.strftime('%Y-%m-%d')}"
+        return result
+
     @staticmethod
     async def adjust_recurring_fee(db: AsyncIOMotorDatabase, user_id: str, 
                                    fee_name: str, new_amount: Optional[float] = None,
                                    new_description: Optional[str] = None, new_pattern_type: Optional[str] = None,
                                    new_pattern_details: Optional[List[int]] = None, new_target_jar: Optional[str] = None,
-                                   disable: bool = False, confidence: int = 85) -> str:
+                                   disable: bool = False) -> str:
         """Update recurring fee."""
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        if fee_name is None or not fee_name.strip():
+            raise ValueError("Fee name cannot be empty")
+            
         fee = await FeeManagementService.get_recurring_fee(db, user_id, fee_name)
         if not fee:
-            return f"❌ Fee '{fee_name}' not found"
+            raise ValueError(f"Fee '{fee_name}' not found")
         
-        update_data = RecurringFeeInDB()
+        update_data = {}
         changes = []
         
         if new_amount is not None:
-            if not CalculationService.validate_positive_amount(new_amount):
-                return f"❌ Amount must be positive, got {CalculationService.format_currency(new_amount)}"
+            if not general_utils.validate_positive_amount(new_amount):
+                raise ValueError(f"Amount must be positive, got {general_utils.format_currency(new_amount)}")
             old_amount = fee.amount
-            update_data.amount = new_amount
-            changes.append(f"amount: {CalculationService.format_currency(old_amount)} → {CalculationService.format_currency(new_amount)}")
-        
+            update_data["amount"] = new_amount
+            changes.append(f"amount: {general_utils.format_currency(old_amount)} → {general_utils.format_currency(new_amount)}")
+
         if new_description is not None:
-            update_data.description = new_description
+            update_data["description"] = new_description
             changes.append("description updated")
         
         if new_pattern_type is not None:
             if new_pattern_type not in ["daily", "weekly", "monthly"]:
-                return f"❌ Pattern type must be 'daily', 'weekly', or 'monthly'"
-            update_data.pattern_type = new_pattern_type
+                raise ValueError("Pattern type must be 'daily', 'weekly', or 'monthly'")
+            update_data["pattern_type"] = new_pattern_type
             changes.append(f"pattern: {new_pattern_type}")
         
         if new_pattern_details is not None:
-            update_data.pattern_details = new_pattern_details
+            update_data["pattern_details"] = new_pattern_details
             changes.append("pattern details updated")
         
         if new_target_jar is not None:
-            jar = await general_utils.get_jar_by_name(db, user_id, new_target_jar.lower().replace(' ', '_'))
+            jar = await jar_utils.get_jar_by_name(db, user_id, new_target_jar.lower().replace(' ', '_'))
             if not jar:
-                return f"❌ Target jar '{new_target_jar}' not found"
+                raise ValueError(f"Target jar '{new_target_jar}' not found")
             old_jar = fee.target_jar
-            update_data.target_jar = jar.name
+            update_data["target_jar"] = jar.name
             changes.append(f"target: {old_jar} → {jar.name}")
         
         if disable:
-            update_data.is_active = False
+            update_data["is_active"] = False
             changes.append("disabled")
         
         if new_pattern_type is not None or new_pattern_details is not None:
             final_type = new_pattern_type or fee.pattern_type
             final_details = new_pattern_details if new_pattern_details is not None else fee.pattern_details
-            update_data.next_occurrence = FeeManagementService.calculate_next_fee_occurrence(final_type, final_details)
-            changes.append(f"next occurrence: {update_data.next_occurrence.strftime('%Y-%m-%d')}")
+            update_data["next_occurrence"] = FeeManagementService.calculate_next_fee_occurrence(final_type, final_details)
+            changes.append(f"next occurrence: {update_data['next_occurrence'].strftime('%Y-%m-%d')}")
         
         if changes:
-            await general_utils.update_fee_in_db(db, user_id, fee_name, update_data)
+            updated_fee = await fee_utils.update_fee_in_db(db, user_id, fee_name, update_data)
+            if not updated_fee:
+                raise ValueError(f"Failed to update fee '{fee_name}'")
         
         changes_str = ", ".join(changes) if changes else "no changes"
         result = f"Updated fee '{fee_name}': {changes_str}"
-        return ConfidenceService.format_confidence_response(result, confidence)
-    
+        return result
+
     @staticmethod
-    async def delete_recurring_fee(db: AsyncIOMotorDatabase, user_id: str, fee_name: str, reason: str) -> str:
-        """Delete recurring fee."""
+    async def delete_recurring_fee_with_reason(db: AsyncIOMotorDatabase, user_id: str, fee_name: str, reason: str) -> str:
+        """Delete recurring fee with reason."""
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        if fee_name is None or not fee_name.strip():
+            raise ValueError("Fee name cannot be empty")
+            
         fee = await FeeManagementService.get_recurring_fee(db, user_id, fee_name)
         if not fee:
-            return f"❌ Fee '{fee_name}' not found"
+            raise ValueError(f"Fee '{fee_name}' not found")
         
-        deleted = await FeeManagementService.delete_recurring_fee(db, user_id, fee_name)
-        if deleted:
-            return f"✅ Deleted recurring fee '{fee_name}'. Reason: {reason}"
-        return f"❌ Failed to delete fee '{fee_name}'"
+        # Fixed: call utility function instead of self-recursion
+        deleted = await fee_utils.delete_fee_by_name(db, user_id, fee_name)
+        if not deleted:
+            raise ValueError(f"Failed to delete fee '{fee_name}'")
+            
+        return f"✅ Deleted recurring fee '{fee_name}'. Reason: {reason}"
     
     @staticmethod
     async def list_recurring_fees(db: AsyncIOMotorDatabase, user_id: str, 
                                   active_only: bool = True, target_jar: Optional[str] = None) -> str:
         """List recurring fees with optional filtering."""
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+            
         fees = await FeeManagementService.get_all_recurring_fees(db, user_id)
         
         if active_only:
             fees = [f for f in fees if f.is_active]
         
         if target_jar:
-            jar = await general_utils.get_jar_by_name(db, user_id, target_jar.lower().replace(' ', '_'))
+            jar = await jar_utils.get_jar_by_name(db, user_id, target_jar.lower().replace(' ', '_'))
             if jar:
                 fees = [f for f in fees if f.target_jar == jar.name]
             else:
-                return f"❌ Jar '{target_jar}' not found"
+                raise ValueError(f"Jar '{target_jar}' not found")
         
         if not fees:
             status_desc = "active" if active_only else "all"
@@ -269,28 +320,30 @@ class FeeManagementService:
             summary += f"\n{jar_name.upper()} JAR ({len(jar_fees)} fees):\n"
             for fee in jar_fees:
                 pattern_desc = FeeManagementService._format_pattern_description(fee.pattern_type, fee.pattern_details)
-                summary += f"  • {fee.name}: {fee.description} - {CalculationService.format_currency(fee.amount)} {pattern_desc}"
+                summary += f"  • {fee.name}: {fee.description} - {general_utils.format_currency(fee.amount)} {pattern_desc}"
                 summary += f" | Next: {fee.next_occurrence.strftime('%Y-%m-%d')}\n"
-        
-        summary += f"\n💰 Estimated monthly total: {CalculationService.format_currency(total_monthly)}"
-        
+
+        summary += f"\n💰 Estimated monthly total: {general_utils.format_currency(total_monthly)}"
+
         return summary
     
     @staticmethod
-    async def _validate_fee_name(db: AsyncIOMotorDatabase, user_id: str, name: str) -> Tuple[bool, str]:
+    async def _validate_fee_name(db: AsyncIOMotorDatabase, user_id: str, name: str) -> None:
         """Validate fee name for uniqueness and format."""
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
         if not name or not name.strip():
-            return False, "Fee name cannot be empty"
+            raise ValueError("Fee name cannot be empty")
         
         clean_name = name.strip()
         if len(clean_name) < 3:
-            return False, "Fee name too short (minimum 3 characters)"
+            raise ValueError("Fee name too short (minimum 3 characters)")
         
         existing = await FeeManagementService.get_recurring_fee(db, user_id, clean_name)
         if existing:
-            return False, f"Fee name '{clean_name}' already exists"
-        
-        return True, ""
+            raise ValueError(f"Fee name '{clean_name}' already exists")
     
     @staticmethod
     def _format_pattern_description(pattern_type: str, pattern_details: Optional[List[int]]) -> str:

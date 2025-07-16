@@ -1,5 +1,6 @@
 # backend/agents/orchestrator/tools.py
 
+import json
 from langchain_core.tools import tool
 from typing import List, Dict, Any
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -24,14 +25,59 @@ class OrchestratorServiceContainer:
         self.user_id = user_id
         self.conversation_history = conversation_history
 
-    # Helper method to call other agents
+    # Helper method to call other agents with error handling
     async def _route_to_agent(self, agent_interface: BaseWorkerInterface, task: str) -> Dict[str, Any]:
-        return await agent_interface.process_task(
-            task=task,
-            db=self.db,
-            user_id=self.user_id,
-            conversation_history=self.conversation_history
-        )
+        """
+        Route to an agent with comprehensive error handling.
+        
+        Args:
+            agent_interface: The agent interface to call
+            task: The task description for the agent
+            
+        Returns:
+            Standardized response dict with error handling
+        """
+        try:
+            # Validate input
+            if not task or not task.strip():
+                return {
+                    "response": "Error: Task description cannot be empty",
+                    "agent_lock": None,
+                    "tool_calls": [],
+                    "error": True
+                }
+            
+            # Call the agent
+            result = await agent_interface.process_task(
+                task=task.strip(),
+                db=self.db,
+                user_id=self.user_id,
+                conversation_history=self.conversation_history
+            )
+            
+            # Validate agent response format
+            if not isinstance(result, dict) or "response" not in result:
+                return {
+                    "response": f"Error: Agent {agent_interface.agent_name} returned invalid response format",
+                    "agent_lock": None,
+                    "tool_calls": [],
+                    "error": True
+                }
+            
+            # Return the agent result as-is (it should already be in standardized format)
+            return result
+            
+        except Exception as e:
+            # Handle any agent call failures
+            agent_name = getattr(agent_interface, 'agent_name', 'unknown agent')
+            error_message = f"Agent {agent_name} failed: {str(e)}"
+            
+            return {
+                "response": f"I encountered an error while processing your request with {agent_name}: {str(e)}",
+                "agent_lock": None,
+                "tool_calls": [],
+                "error": True
+            }
 
 def get_all_orchestrator_tools(services: OrchestratorServiceContainer) -> List[tool]:
     """
@@ -186,35 +232,69 @@ def get_all_orchestrator_tools(services: OrchestratorServiceContainer) -> List[t
         Returns:
             Multiple worker routing decision
         """
-        tasks = json.loads(tasks_json)
-        responses = []
-        final_follow_up = False
+        try:
+            tasks = json.loads(tasks_json)
+            responses = []
+            final_agent_lock = None
+            final_plan_stage = None
+            all_tool_calls = []
+            any_errors = False
 
-        for task_info in tasks:
-            worker_name = task_info["worker"]
-            worker_task = task_info["task"]
+            for task_info in tasks:
+                worker_name = task_info["worker"]
+                worker_task = task_info["task"]
+                
+                # Map worker name to its interface
+                interface_map = {
+                    "classifier": ClassifierInterface(),
+                    "jar": JarManagerInterface(),
+                    "fee": FeeManagerInterface(),
+                    "plan": BudgetAdvisorInterface(),
+                    "fetcher": TransactionFetcherInterface(),
+                    "knowledge": KnowledgeInterface()
+                }
+                
+                interface = interface_map.get(worker_name)
+                if interface:
+                    result = await services._route_to_agent(interface, worker_task)
+                    responses.append(f"**{worker_name.replace('_', ' ').title()}**:\n{result.get('response', 'No response.')}")
+                    
+                    # Handle standardized response format
+                    if result.get('agent_lock'):
+                        final_agent_lock = result.get('agent_lock')  # Last agent with lock wins
+                    if result.get('plan_stage'):
+                        final_plan_stage = result.get('plan_stage')  # Last plan stage wins
+                    if result.get('tool_calls'):
+                        all_tool_calls.extend(result.get('tool_calls', []))
+                    if result.get('error'):
+                        any_errors = True
+                else:
+                    responses.append(f"**Error**: Unknown worker '{worker_name}'")
+                    any_errors = True
             
-            # Map worker name to its interface
-            interface_map = {
-                "classifier": ClassifierInterface(),
-                "jar": JarManagerInterface(),
-                "fee": FeeManagerInterface(),
-                "plan": BudgetAdvisorInterface(),
-                "fetcher": TransactionFetcherInterface(),
-                "knowledge": KnowledgeInterface()
+            # Return standardized multi-agent response format
+            return {
+                "response": "\n\n".join(responses),
+                "agent_lock": final_agent_lock,
+                "plan_stage": final_plan_stage,
+                "tool_calls": all_tool_calls,
+                "error": any_errors
             }
             
-            interface = interface_map.get(worker_name)
-            if interface:
-                result = await services._route_to_agent(interface, worker_task)
-                responses.append(f"**{worker_name.replace('_', ' ').title()}**:\n{result.get('response', 'No response.')}")
-                if result.get('requires_follow_up', False):
-                    final_follow_up = True
-        
-        return {
-            "response": "\n\n".join(responses),
-            "requires_follow_up": final_follow_up
-        }
+        except json.JSONDecodeError as e:
+            return {
+                "response": f"Error: Invalid JSON format in tasks: {str(e)}",
+                "agent_lock": None,
+                "tool_calls": [],
+                "error": True
+            }
+        except Exception as e:
+            return {
+                "response": f"Error processing multiple tasks: {str(e)}",
+                "agent_lock": None,
+                "tool_calls": [],
+                "error": True
+            }
 
     return [
         provide_direct_response,

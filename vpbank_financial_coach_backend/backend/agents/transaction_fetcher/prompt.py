@@ -8,7 +8,7 @@ This is a DATA RETRIEVAL service - return raw transaction data, no analysis.
 
 from typing import List
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from backend.utils.general_utils import get_all_jars_for_user
+from backend.utils.jar_utils import get_all_jars_for_user
 
 async def build_history_fetcher_prompt(
     user_query: str,

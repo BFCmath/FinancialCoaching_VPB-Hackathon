@@ -19,7 +19,8 @@ parent_dir = os.path.dirname(os.path.dirname(current_dir))
 sys.path.append(parent_dir)
 
 from backend.models.conversation import ConversationTurnInDB
-from backend.utils.general_utils import get_all_jars_for_user, get_all_fees_for_user
+from backend.utils.jar_utils import get_all_jars_for_user
+from backend.utils.fee_utils import get_all_fees_for_user
 
 async def build_fee_manager_prompt(
     user_input: str,

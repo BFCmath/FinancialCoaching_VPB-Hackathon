@@ -17,7 +17,7 @@ from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 # Import database utilities
-from backend.utils import general_utils
+from backend.utils import fee_utils, jar_utils, transaction_utils, plan_utils
 
 APP_INFO = """
 {
@@ -82,10 +82,10 @@ class KnowledgeService:
         
         # Add user context
         try:
-            jars = await general_utils.get_all_jars_for_user(db, user_id)
-            transactions = await general_utils.get_all_transactions_for_user(db, user_id)
-            fees = await general_utils.get_all_fees_for_user(db, user_id)
-            plans = await general_utils.get_all_plans_for_user(db, user_id)
+            jars = await jar_utils.get_all_jars_for_user(db, user_id)
+            transactions = await transaction_utils.get_all_transactions_for_user(db, user_id)
+            fees = await fee_utils.get_all_fees_for_user(db, user_id)
+            plans = await plan_utils.get_all_plans_for_user(db, user_id)
             
             app_info["user_context"] = {
                 "total_jars": len(jars),

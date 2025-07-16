@@ -22,9 +22,10 @@ class BudgetAdvisorInterface(BaseWorkerInterface):
 
     agent_name = "plan"
 
-    async def process_task(self, task: str, db: AsyncIOMotorDatabase, user_id: str, conversation_history: List[ConversationTurnInDB] = None) -> Dict[str, Any]:
+    async def process_task(self, task: str, db: AsyncIOMotorDatabase, user_id: str, 
+                          conversation_history: List[ConversationTurnInDB] = None) -> Dict[str, Any]:
         """
-        Processes a financial planning task with Enhanced Pattern 2.
+        Processes a financial planning task with standardized return format.
 
         Args:
             task: The user's budget planning request
@@ -33,19 +34,60 @@ class BudgetAdvisorInterface(BaseWorkerInterface):
             conversation_history: The history of the conversation
 
         Returns:
-            A dictionary containing the response and metadata
-            Example: {"response": "...", "requires_follow_up": False, "stage": "1"}
-        """
-        # Validate required parameters for production
-        if db is None:
-            raise ValueError("Database connection is required for production budget advisor agent")
-        if user_id is None:
-            raise ValueError("User ID is required for production budget advisor agent")
+            Dict containing:
+            - response: Agent response text
+            - agent_lock: Agent name if lock required (plan agent typically requires lock during multi-stage process)
+            - tool_calls: List of tool calls made during processing
+            - plan_stage: Current stage of the plan process ("1", "2", "3")
+            - error: Boolean indicating if an error occurred
             
+        Raises:
+            ValueError: For invalid input parameters or processing errors
+        """
+        # Validate inputs using base class validation
+        self.validate_inputs(task, db, user_id)
+        
         if conversation_history is None:
             conversation_history = []
+        
+        try:
+            # Call the plan agent main process_task
+            result = await process_task(task, db, user_id, conversation_history)
             
-        return await process_task(task, db, user_id, conversation_history)
+            # Validate result format
+            if not isinstance(result, dict) or "response" not in result:
+                raise ValueError("Plan agent returned invalid response format")
+            
+            # Extract response and follow-up information
+            agent_output = result["response"]
+            requires_follow_up = result.get("requires_follow_up", False)
+            current_plan_stage = result.get("plan_stage", "1")  # Get plan_stage from result, default to "1"
+            
+            # Plan agent typically requires lock during multi-stage process
+            # Only release lock when plan is complete (stage 3 and no follow-up)
+            agent_lock = "plan" if requires_follow_up or current_plan_stage in ["1", "2"] else None
+            
+            # Return standardized dict format for orchestrator
+            return {
+                "response": agent_output,
+                "agent_lock": agent_lock,
+                "tool_calls": result.get("tool_calls", []),
+                "plan_stage": current_plan_stage,  # Renamed from stage
+                "error": False
+            }
+            
+        except Exception as e:
+            # Handle any plan agent processing errors
+            error_message = f"Plan agent failed: {str(e)}"
+            
+            # Return error in standardized format
+            return {
+                "response": f"I encountered an error while processing your financial planning request: {str(error_message)}",
+                "agent_lock": None,
+                "tool_calls": [],
+                "plan_stage": "1",  # Default to stage 1 on error
+                "error": True
+            }
 
     def get_capabilities(self) -> Optional[List[str]]:
         """Returns list of agent capabilities."""

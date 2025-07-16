@@ -7,7 +7,7 @@ with database backend, maintaining exact same interface and behavior.
 Covers all transaction operations from lab utils.py and service.py:
 - save_transaction, get_all_transactions, get_transactions_by_jar, get_transactions_by_date_range
 - get_transactions_by_amount_range, get_transactions_by_source, calculate_jar_spending_total
-- add_money_to_jar_with_confidence, report_no_suitable_jar, request_more_info
+- add_money_to_jar, report_no_suitable_jar, request_more_info
 - All query methods including get_complex_transaction
 All methods are async where appropriate.
 """
@@ -17,11 +17,8 @@ from datetime import datetime, date, timedelta
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 # Import database utilities and models
-from backend.utils import general_utils
+from backend.utils import transaction_utils, general_utils, jar_utils
 from backend.models.transaction import TransactionInDB, TransactionCreate
-from backend.models.jar import JarUpdate
-from .core_services import CalculationService, UserSettingsService
-from .confidence_service import ConfidenceService
 
 class TransactionService:
     """
@@ -32,6 +29,11 @@ class TransactionService:
     @staticmethod
     async def save_transaction(db: AsyncIOMotorDatabase, user_id: str, transaction_data: TransactionCreate) -> TransactionInDB:
         """Save transaction to database."""
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+            
         # Validation can stay the same
         is_valid, errors = await TransactionService.validate_transaction_data(db, user_id, transaction_data)
         if not is_valid:
@@ -42,39 +44,61 @@ class TransactionService:
         transaction_dict['user_id'] = user_id
         
         # Call the database utility with the correct arguments
-        return await general_utils.create_transaction_in_db(db, transaction_dict)
-    
+        return await transaction_utils.create_transaction_in_db(db, transaction_dict)
+
     @staticmethod
     async def get_all_transactions(db: AsyncIOMotorDatabase, user_id: str) -> List[TransactionInDB]:
         """Get all transactions for user."""
-        return await general_utils.get_all_transactions_for_user(db, user_id)
-    
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        return await transaction_utils.get_all_transactions_for_user(db, user_id)
+
     @staticmethod
     async def get_transactions_by_jar(db: AsyncIOMotorDatabase, user_id: str, jar_name: str) -> List[TransactionInDB]:
         """Get transactions for specific jar."""
-        jar = await general_utils.get_jar_by_name(db, user_id, jar_name.lower().replace(' ', '_'))
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        if jar_name is None or not jar_name.strip():
+            raise ValueError("Jar name cannot be empty")
+            
+        jar = await jar_utils.get_jar_by_name(db, user_id, jar_name.lower().replace(' ', '_'))
         if not jar:
             raise ValueError(f"Jar '{jar_name}' not found")
-        return await general_utils.get_transactions_by_jar_for_user(db, user_id, jar.name)
-    
+        return await transaction_utils.get_transactions_by_jar_for_user(db, user_id, jar.name)
+
     @staticmethod
     async def get_transactions_by_date_range(db: AsyncIOMotorDatabase, user_id: str, 
                                              start_date: str, end_date: Optional[str] = None) -> List[TransactionInDB]:
         """Get transactions within date range."""
         start_parsed = TransactionQueryService._parse_flexible_date(start_date)
         end_parsed = TransactionQueryService._parse_flexible_date(end_date) if end_date else datetime.now().date()
-        return await general_utils.get_transactions_by_date_range_for_user(db, user_id, start_parsed, end_parsed)
-    
+        return await transaction_utils.get_transactions_by_date_range_for_user(db, user_id, start_parsed, end_parsed)
+
     @staticmethod
     async def get_transactions_by_amount_range(db: AsyncIOMotorDatabase, user_id: str, 
                                                min_amount: Optional[float] = None, max_amount: Optional[float] = None) -> List[TransactionInDB]:
         """Get transactions within amount range."""
-        return await general_utils.get_transactions_by_amount_range_for_user(db, user_id, min_amount, max_amount)
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        if min_amount is not None and min_amount < 0:
+            raise ValueError("Minimum amount cannot be negative")
+        if max_amount is not None and max_amount < 0:
+            raise ValueError("Maximum amount cannot be negative")
+        if min_amount is not None and max_amount is not None and min_amount > max_amount:
+            raise ValueError("Minimum amount cannot be greater than maximum amount")
+            
+        return await transaction_utils.get_transactions_by_amount_range_for_user(db, user_id, min_amount, max_amount)
 
     @staticmethod
     async def get_transactions_by_source(db: AsyncIOMotorDatabase, user_id: str, source: str) -> List[TransactionInDB]:
         """Get transactions by source type."""
-        return await general_utils.get_transactions_by_source_for_user(db, user_id, source)
+        return await transaction_utils.get_transactions_by_source_for_user(db, user_id, source)
     
     @staticmethod
     async def calculate_jar_spending_total(db: AsyncIOMotorDatabase, user_id: str, jar_name: str) -> float:
@@ -83,19 +107,25 @@ class TransactionService:
         return sum(t.amount for t in transactions)
     
     @staticmethod
-    async def add_money_to_jar_with_confidence(db: AsyncIOMotorDatabase, user_id: str,
-                                            amount: float, jar_name: str, confidence: int, source: str) -> str:
+    async def add_money_to_jar(db: AsyncIOMotorDatabase, user_id: str,
+                                            amount: float, jar_name: str, source: str) -> str:
         """Add money to jar with confidence-based formatting."""
-        jar = await general_utils.get_jar_by_name(db, user_id, jar_name.lower().replace(' ', '_'))
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        if amount <= 0:
+            raise ValueError("Amount must be positive")
+            
+        jar = await jar_utils.get_jar_by_name(db, user_id, jar_name.lower().replace(' ', '_'))
         if not jar:
-            return "❌ Error: Jar '{0}' not found".format(jar_name)
+            raise ValueError(f"Jar '{jar_name}' not found")
         
         transaction = TransactionCreate(
             amount=amount,
             jar=jar.name,
             description=f"Transaction classified to {jar.name}",
-            date=datetime.now().strftime("%Y-%m-%d"),
-            time=datetime.now().strftime("%H:%M"),
+            transaction_datetime=datetime.now(),
             source=source
         )
         
@@ -104,16 +134,19 @@ class TransactionService:
         
         # Update jar current amount
         new_current_amount = jar.current_amount + amount
-        new_current_percent = await CalculationService.calculate_percent_from_amount(db, user_id, new_current_amount)
+        # Fix the function call - it doesn't need db and user_id parameters
+        new_current_percent = general_utils.calculate_percent_from_amount(new_current_amount, jar.amount)
         update_data = {
             "current_amount": new_current_amount,
             "current_percent": new_current_percent
         }
-        await general_utils.update_jar_in_db(db, user_id, jar.name, update_data)
-        
-        result = f"Added {CalculationService.format_currency(amount)} to {jar.name} jar"
-        return ConfidenceService.format_confidence_response(result, confidence)
-    
+        updated_jar = await jar_utils.update_jar_in_db(db, user_id, jar.name, update_data)
+        if not updated_jar:
+            raise ValueError(f"Failed to update jar '{jar.name}'")
+
+        result = f"Added {general_utils.format_currency(amount)} to {jar.name} jar"
+        return result
+
     @staticmethod
     def report_no_suitable_jar(description: str, suggestion: str) -> str:
         """Report when no existing jar matches the transaction."""
@@ -129,21 +162,19 @@ class TransactionService:
         """Validate transaction data."""
         errors = []
         
-        if not CalculationService.validate_positive_amount(transaction_data.amount):
+        if not general_utils.validate_positive_amount(transaction_data.amount):
             errors.append(f"Amount {transaction_data.amount} must be positive")
         
-        jar = await general_utils.get_jar_by_name(db, user_id, transaction_data.jar)
+        jar = await jar_utils.get_jar_by_name(db, user_id, transaction_data.jar)
         if not jar:
             errors.append(f"Jar '{transaction_data.jar}' does not exist")
         
         if not transaction_data.description or not transaction_data.description.strip():
             errors.append("Description cannot be empty")
         
-        # Validate date format
-        try:
-            datetime.strptime(transaction_data.date, "%Y-%m-%d")
-        except ValueError:
-            errors.append(f"Invalid date format: {transaction_data.date}")
+        # Validate transaction_datetime (it's a datetime object, not a string)
+        if transaction_data.transaction_datetime is None:
+            errors.append("transaction_datetime is required")
         
         return len(errors) == 0, errors
 
@@ -201,8 +232,8 @@ class TransactionQueryService:
         
         filtered = filtered[:limit]
         transaction_dicts = [t.dict() for t in filtered]
-        
-        range_desc = f"{CalculationService.format_currency(min_amount or 0)} - {CalculationService.format_currency(max_amount or 'unlimited')}"
+
+        range_desc = f"{general_utils.format_currency(min_amount or 0)} - {general_utils.format_currency(max_amount or 'unlimited')}"
         auto_desc = description or (f"{jar_name} transactions in range {range_desc}" if jar_name else f"all transactions in range {range_desc}")
         return {"data": transaction_dicts, "description": f"retrieved {len(transaction_dicts)} {auto_desc}"}
     

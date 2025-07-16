@@ -74,16 +74,24 @@ def get_all_classifier_tools(services: ClassifierServiceContainer) -> List[tool]
             A dictionary containing a list of past transactions that match the query.
             This data can then be used to infer missing details in your reasoning process.
         """
-        return await AgentCommunicationService.call_transaction_fetcher(
-            services.db, services.user_id, user_query, description
-        )
+        try:
+            return await AgentCommunicationService.call_transaction_fetcher(
+                services.db, services.user_id, user_query, description
+            )
+        except Exception as e:
+            # Return error information in a format the agent can understand
+            return {
+                "data": [],
+                "error": f"Failed to fetch transaction data: {str(e)}",
+                "description": f"Error while {description}"
+            }
 
     # =============================================================================
     # FINAL ACTION / TERMINAL TOOLS
     # =============================================================================
 
     @tool
-    async def add_money_to_jar_with_confidence(amount: float, jar_name: str, confidence: int) -> str:
+    async def add_money_to_jar(amount: float, jar_name: str, confidence: int) -> str:
         """
         FINAL ACTION: Classifies a transaction by adding a specific amount to a budget jar.
 
@@ -101,12 +109,20 @@ def get_all_classifier_tools(services: ClassifierServiceContainer) -> List[tool]
         Returns:
             A success message confirming the transaction has been logged.
         """
-        return await TransactionService.add_money_to_jar_with_confidence(
-            services.db, services.user_id, amount, jar_name, confidence, source="text_input"
-        )
+        try:
+            # Call TransactionService with correct parameters: db, user_id, amount, jar_name, source
+            return await TransactionService.add_money_to_jar(
+                services.db, services.user_id, amount, jar_name, source="text_input"
+            )
+        except ValueError as e:
+            # Service validation errors
+            return f"❌ Failed to add transaction: {str(e)}"
+        except Exception as e:
+            # Unexpected errors
+            return f"❌ An unexpected error occurred: {str(e)}"
 
     @tool
-    def report_no_suitable_jar(description: str, suggestion: str) -> str:
+    async def report_no_suitable_jar(description: str, suggestion: str) -> str:
         """
         FINAL ACTION: Reports that a transaction cannot be classified into any existing jar.
 
@@ -123,10 +139,15 @@ def get_all_classifier_tools(services: ClassifierServiceContainer) -> List[tool]
         Returns:
             A message explaining that no suitable jar was found, including the suggestion.
         """
-        return TransactionService.report_no_suitable_jar(description, suggestion)
+        try:
+            # TransactionService.report_no_suitable_jar is static and doesn't need db/user_id
+            return TransactionService.report_no_suitable_jar(description, suggestion)
+        except Exception as e:
+            # Handle any unexpected errors
+            return f"❌ Error reporting classification failure: {str(e)}"
 
     @tool
-    def respond(pattern_found: str, confirm_question: str) -> str:
+    async def respond(pattern_found: str, confirm_question: str) -> str:
         """
         FINAL ACTION: Presents findings from data analysis and asks a confirmation question.
 
@@ -145,9 +166,13 @@ def get_all_classifier_tools(services: ClassifierServiceContainer) -> List[tool]
         Returns:
             A formatted string containing both the finding and the question for the user.
         """
-        # This is a final action, so it does not set a conversation lock.
-        # The user's response will be handled by the orchestrator in the next turn.
-        return f"Finding: {pattern_found}\nQuestion: {confirm_question}"
+        try:
+            # This is a final action, so it does not set a conversation lock.
+            # The user's response will be handled by the orchestrator in the next turn.
+            return f"Finding: {pattern_found}\nQuestion: {confirm_question}"
+        except Exception as e:
+            # Handle any unexpected errors in formatting
+            return f"❌ Error asking for confirmation: {str(e)}"
 
     # =============================================================================
     # TOOL REGISTRATION
@@ -155,7 +180,7 @@ def get_all_classifier_tools(services: ClassifierServiceContainer) -> List[tool]
 
     return [
         transaction_fetcher,
-        add_money_to_jar_with_confidence,
+        add_money_to_jar,
         report_no_suitable_jar,
         respond
     ]

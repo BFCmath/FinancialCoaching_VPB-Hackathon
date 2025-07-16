@@ -13,7 +13,6 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from backend.utils import jar_utils, user_setting_utils
 from backend.utils.general_utils import validate_percentage_range, calculate_amount_from_percent, format_percentage, format_currency, calculate_percent_from_amount
 from backend.models.jar import JarInDB, JarCreate, JarUpdate
-from .service_responses import JarOperationResult, ServiceError
 
 class JarManagementService:
     """
@@ -22,20 +21,34 @@ class JarManagementService:
     """
 
     @staticmethod
+    async def _get_total_income(db: AsyncIOMotorDatabase, user_id: str) -> float:
+        """Helper method to get user's total income with validation."""
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        return await user_setting_utils.get_user_total_income(db, user_id)
+
+    @staticmethod
     async def _calculate_percent_from_amount(db: AsyncIOMotorDatabase, user_id: str, amount: float) -> float:
         """Convert dollar amount to percentage of total income."""
-        total_income = await user_setting_utils.get_user_total_income(db, user_id)
+        if amount < 0:
+            raise ValueError(f"Amount cannot be negative, got {amount}")
+        total_income = await JarManagementService._get_total_income(db, user_id)
         return calculate_percent_from_amount(amount, total_income)
     
     @staticmethod
     async def _calculate_amount_from_percent(db: AsyncIOMotorDatabase, user_id: str, percent: float) -> float:
         """Convert percentage to dollar amount based on total income."""
-        total_income = await user_setting_utils.get_user_total_income(db, user_id)
+        if not validate_percentage_range(percent):
+            raise ValueError(f"Percentage must be between 0 and 1, got {percent}")
+        total_income = await JarManagementService._get_total_income(db, user_id)
         return calculate_amount_from_percent(percent, total_income)
     
     @staticmethod
     async def _calculate_jar_total_allocation(db: AsyncIOMotorDatabase, user_id: str) -> float:
         """Calculate total percentage allocation across all jars."""
+        await JarManagementService._get_total_income(db, user_id)  # Validation only
         jars = await jar_utils.get_all_jars_for_user(db, user_id)
         return sum(jar.percent for jar in jars)
     
@@ -43,77 +56,50 @@ class JarManagementService:
     async def create_jar(db: AsyncIOMotorDatabase, user_id: str,
                          name: List[str], description: List[str], 
                          percent: List[Optional[float]] = None, 
-                         amount: List[Optional[float]] = None) -> JarOperationResult:
+                         amount: List[Optional[float]] = None) -> str:
         """Create one or multiple jars with atomic validation and rebalancing."""
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
         if not name or not description:
-            return JarOperationResult.error("Name and description lists cannot be empty", code="MISSING_REQUIRED_FIELDS")
+            raise ValueError("Name and description lists cannot be empty")
 
         num_jars = len(name)
         if len(description) != num_jars:
-            return JarOperationResult.error(
-                f"Description list length ({len(description)}) must match name list length ({num_jars})",
-                code="PARAMETER_MISMATCH"
-            )
+            raise ValueError(f"Description list length ({len(description)}) must match name list length ({num_jars})")
         
         percent = percent if percent is not None else [None] * num_jars
         amount = amount if amount is not None else [None] * num_jars
         if len(percent) != num_jars or len(amount) != num_jars:
-            return JarOperationResult.error("All parameter lists must have the same length", code="PARAMETER_MISMATCH")
+            raise ValueError("All parameter lists must have the same length")
 
-        total_income = await user_setting_utils.get_user_total_income(db, user_id)
+        total_income = await JarManagementService._get_total_income(db, user_id)
 
         # --- PASS 1: VALIDATION ---
         validated_jars_data = []
         total_new_percent = 0.0
-        validation_errors = []
 
         for i in range(num_jars):
             jar_name, jar_desc, jar_percent, jar_amount = name[i], description[i], percent[i], amount[i]
 
             if not jar_name or not jar_desc:
-                validation_errors.append(ServiceError(
-                    code="EMPTY_FIELD",
-                    message=f"Jar {i+1}: Name and description cannot be empty",
-                    field=f"jar_{i+1}"
-                ))
-                continue
+                raise ValueError(f"Jar {i+1}: Name and description cannot be empty")
 
             if jar_percent is None and jar_amount is None:
-                validation_errors.append(ServiceError(
-                    code="MISSING_ALLOCATION",
-                    message=f"Jar {i+1} '{jar_name}': Must provide either 'percent' or 'amount'",
-                    field=f"jar_{i+1}_allocation"
-                ))
-                continue
+                raise ValueError(f"Jar {i+1} '{jar_name}': Must provide either 'percent' or 'amount'")
                 
             if jar_percent is not None and jar_amount is not None:
-                validation_errors.append(ServiceError(
-                    code="CONFLICTING_ALLOCATION",
-                    message=f"Jar {i+1} '{jar_name}': Cannot provide both 'percent' and 'amount'",
-                    field=f"jar_{i+1}_allocation"
-                ))
-                continue
+                raise ValueError(f"Jar {i+1} '{jar_name}': Cannot provide both 'percent' and 'amount'")
 
             if jar_amount is not None:
                 jar_percent = await JarManagementService._calculate_percent_from_amount(db, user_id, jar_amount)
 
             if not validate_percentage_range(jar_percent):
-                validation_errors.append(ServiceError(
-                    code="INVALID_PERCENTAGE",
-                    message=f"Jar {i+1} '{jar_name}': Percentage {format_percentage(jar_percent)} is invalid",
-                    field=f"jar_{i+1}_percent"
-                ))
-                continue
+                raise ValueError(f"Jar {i+1} '{jar_name}': Percentage {format_percentage(jar_percent)} is invalid")
 
             clean_name = jar_name.strip().lower().replace(' ', '_')
-            is_valid, error_msg = await JarManagementService.validate_jar_name(db, user_id, clean_name)
-            if not is_valid:
-                validation_errors.append(ServiceError(
-                    code="INVALID_NAME",
-                    message=f"Jar {i+1} '{jar_name}': {error_msg}",
-                    field=f"jar_{i+1}_name"
-                ))
-                continue
+            await JarManagementService._validate_jar_name(db, user_id, clean_name)
 
             validated_jars_data.append({
                 'name': clean_name, 'description': jar_desc,
@@ -122,24 +108,13 @@ class JarManagementService:
             })
             total_new_percent += jar_percent
 
-        if validation_errors:
-            return JarOperationResult(
-                status="error",
-                message="Validation failed for jar creation",
-                errors=validation_errors
-            )
-
         if total_new_percent > 1.001:
-            return JarOperationResult.error(
-                f"Cannot create jars. New jars alone total {format_percentage(total_new_percent)}, which exceeds the 100% maximum",
-                code="ALLOCATION_EXCEEDED"
-            )
+            raise ValueError(f"Cannot create jars. New jars alone total {format_percentage(total_new_percent)}, which exceeds the 100% maximum")
 
         # --- PASS 2: EXECUTION ---
-        created_jars_info = []
         newly_created_names = []
         for data in validated_jars_data:
-             # 1. Create a simple dictionary with all required fields
+            # Create a simple dictionary with all required fields
             jar_dict_to_create = {
                 "user_id": user_id,
                 "name": data['name'],
@@ -150,37 +125,65 @@ class JarManagementService:
                 "current_amount": 0.0
             }
 
-            # 2. Call the db_utils function with the correct 2 arguments
+            # Call the db_utils function with the correct 2 arguments
             created_jar = await jar_utils.create_jar_in_db(db, jar_dict_to_create)
-            
             newly_created_names.append(created_jar.name)
-            created_jars_info.append(f"'{created_jar.name}': {format_percentage(created_jar.percent)} ({format_currency(created_jar.amount)})")
 
         # --- REBALANCING ---
         rebalance_msg = await JarManagementService._rebalance_after_creation(db, user_id, newly_created_names)
 
+        # VERIFICATION: Ensure newly created jars still have their intended percentages
+        for i, created_name in enumerate(newly_created_names):
+            created_jar = await jar_utils.get_jar_by_name(db, user_id, created_name)
+            intended_percent = validated_jars_data[i]['percent']
+            if abs(created_jar.percent - intended_percent) > 0.001:
+                raise ValueError(f"Rebalancing error: Jar '{created_name}' percent changed from intended {format_percentage(intended_percent)} to {format_percentage(created_jar.percent)}")
+
         if len(name) == 1:
-            return JarOperationResult.jar_created(
-                jar_name=newly_created_names[0],
-                allocation=f"{format_percentage(validated_jars_data[0]['percent'])} ({format_currency(validated_jars_data[0]['amount'])})",
-                rebalance_info=rebalance_msg if rebalance_msg else None
-            )
+            allocation_str = f"{format_percentage(validated_jars_data[0]['percent'])} ({format_currency(validated_jars_data[0]['amount'])})"
+            result = f"✅ Created jar '{newly_created_names[0]}' with allocation {allocation_str}"
+            if rebalance_msg:
+                result += f"\n{rebalance_msg}"
+            return result
         else:
-            return JarOperationResult.jars_created(
-                jar_count=len(name),
-                jar_names=newly_created_names,
-                rebalance_info=rebalance_msg if rebalance_msg else None
-            )
+            result = f"✅ Created {len(name)} jars: {', '.join(newly_created_names)}"
+            if rebalance_msg:
+                result += f"\n{rebalance_msg}"
+            return result
+
+    @staticmethod
+    async def _validate_jar_name(db: AsyncIOMotorDatabase, user_id: str, name: str, exclude_current: Optional[str] = None) -> None:
+        """Validate jar name for uniqueness and format."""
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        if not name or not name.strip():
+            raise ValueError("Jar name cannot be empty")
+        
+        clean_name = name.strip().lower().replace(' ', '_')
+        if len(clean_name) < 2:
+            raise ValueError("Jar name too short (minimum 2 characters)")
+        
+        jars = await jar_utils.get_all_jars_for_user(db, user_id)
+        existing_names = [j.name.lower() for j in jars if j.name.lower() != (exclude_current.lower() if exclude_current else "")]
+        
+        if clean_name in existing_names:
+            raise ValueError(f"Jar name '{clean_name}' already exists")
 
     @staticmethod
     async def update_jar(db: AsyncIOMotorDatabase, user_id: str,
                          jar_name: List[str], new_name: List[Optional[str]] = None, 
                          new_description: List[Optional[str]] = None,
                          new_percent: List[Optional[float]] = None, 
-                         new_amount: List[Optional[float]] = None) -> JarOperationResult:
+                         new_amount: List[Optional[float]] = None) -> str:
         """Update multiple existing jars with atomic validation and rebalancing."""
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
         if not jar_name:
-            return JarOperationResult.error("Jar name list cannot be empty", code="MISSING_REQUIRED_FIELDS")
+            raise ValueError("Jar name list cannot be empty")
 
         num_jars = len(jar_name)
         new_name = new_name if new_name is not None else [None] * num_jars
@@ -188,37 +191,24 @@ class JarManagementService:
         new_percent = new_percent if new_percent is not None else [None] * num_jars
         new_amount = new_amount if new_amount is not None else [None] * num_jars
         if not all(len(lst) == num_jars for lst in [new_name, new_description, new_percent, new_amount]):
-            return JarOperationResult.error("All parameter lists must have the same length", code="PARAMETER_MISMATCH")
+            raise ValueError("All parameter lists must have the same length")
 
         # --- PASS 1: VALIDATION ---
         updates_to_perform = []
         total_percent_change = 0.0
-        validation_errors = []
 
         for i in range(num_jars):
             current_jar_name_clean = jar_name[i].strip().lower().replace(' ', '_')
             jar_to_update = await jar_utils.get_jar_by_name(db, user_id, current_jar_name_clean)
             if not jar_to_update:
-                validation_errors.append(ServiceError(
-                    code="NOT_FOUND",
-                    message=f"Jar '{jar_name[i]}' not found",
-                    field=f"jar_{i+1}_name"
-                ))
-                continue
+                raise ValueError(f"Jar '{jar_name[i]}' not found")
 
             update_data = JarUpdate()
             changes = []
 
             if new_name[i]:
                 new_clean_name = new_name[i].strip().lower().replace(' ', '_')
-                is_valid, error_msg = await JarManagementService.validate_jar_name(db, user_id, new_clean_name, exclude_current=current_jar_name_clean)
-                if not is_valid:
-                    validation_errors.append(ServiceError(
-                        code="INVALID_NAME",
-                        message=f"New name for '{jar_name[i]}': {error_msg}",
-                        field=f"jar_{i+1}_new_name"
-                    ))
-                    continue
+                await JarManagementService._validate_jar_name(db, user_id, new_clean_name, exclude_current=current_jar_name_clean)
                 update_data.name = new_clean_name
                 changes.append("name")
 
@@ -232,12 +222,7 @@ class JarManagementService:
 
             if jar_new_percent is not None:
                 if not validate_percentage_range(jar_new_percent):
-                    validation_errors.append(ServiceError(
-                        code="INVALID_PERCENTAGE",
-                        message=f"New percentage for '{jar_name[i]}' is invalid",
-                        field=f"jar_{i+1}_percent"
-                    ))
-                    continue
+                    raise ValueError(f"New percentage for '{jar_name[i]}' is invalid")
                 update_data.percent = jar_new_percent
                 update_data.amount = await JarManagementService._calculate_amount_from_percent(db, user_id, jar_new_percent)
                 total_percent_change += (jar_new_percent - jar_to_update.percent)
@@ -246,18 +231,8 @@ class JarManagementService:
             if changes:
                 updates_to_perform.append((current_jar_name_clean, update_data, changes))
 
-        if validation_errors:
-            return JarOperationResult(
-                status="error",
-                message="Validation failed for jar updates",
-                errors=validation_errors
-            )
-
         if total_percent_change > 1.0:
-            return JarOperationResult.error(
-                f"Cannot update jars - percentage increase of {format_percentage(total_percent_change)} exceeds 100%",
-                code="ALLOCATION_EXCEEDED"
-            )
+            raise ValueError(f"Cannot update jars - percentage increase of {format_percentage(total_percent_change)} exceeds 100%")
 
         # --- PASS 2: EXECUTION ---
         final_updated_names = []
@@ -272,50 +247,47 @@ class JarManagementService:
         rebalance_msg = ""
         if total_percent_change != 0:
             rebalance_msg = await JarManagementService._rebalance_after_update(db, user_id, final_updated_names)
+            
+            # VERIFICATION: Ensure updated jars still have their intended percentages
+            for original_name, update_data, changes in updates_to_perform:
+                if "allocation" in changes:  # Only check if allocation was changed
+                    current_jar = await jar_utils.get_jar_by_name(db, user_id, update_data.name if update_data.name else original_name)
+                    intended_percent = update_data.percent
+                    if abs(current_jar.percent - intended_percent) > 0.001:
+                        raise ValueError(f"Rebalancing error: Updated jar '{current_jar.name}' percent changed from intended {format_percentage(intended_percent)} to {format_percentage(current_jar.percent)}")
 
         if len(update_summaries) == 1:
-            return JarOperationResult.jar_updated(
-                jar_name=final_updated_names[0],
-                changes=updates_to_perform[0][2],
-                rebalance_info=rebalance_msg if rebalance_msg else None
-            )
+            result = f"✅ Updated jar '{final_updated_names[0]}' - changes: {', '.join(updates_to_perform[0][2])}"
+            if rebalance_msg:
+                result += f"\n{rebalance_msg}"
+            return result
         else:
-            return JarOperationResult.success(
-                message=f"Successfully updated {len(update_summaries)} jars: {'; '.join(update_summaries)}",
-                data={"updated_jars": final_updated_names, "changes": update_summaries},
-                warnings=[rebalance_msg] if rebalance_msg else None
-            )
+            result = f"✅ Successfully updated {len(update_summaries)} jars: {'; '.join(update_summaries)}"
+            if rebalance_msg:
+                result += f"\n{rebalance_msg}"
+            return result
 
     @staticmethod
-    async def delete_jar(db: AsyncIOMotorDatabase, user_id: str, jar_name: List[str], reason: str) -> JarOperationResult:
+    async def delete_jar(db: AsyncIOMotorDatabase, user_id: str, jar_name: List[str], reason: str) -> str:
         """Delete multiple jars with atomic validation and rebalancing."""
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
         if not jar_name:
-            return JarOperationResult.error("Jar name list cannot be empty", code="MISSING_REQUIRED_FIELDS")
+            raise ValueError("Jar name list cannot be empty")
 
         # --- PASS 1: VALIDATION ---
         jars_to_delete = []
         total_deleted_percent = 0.0
-        validation_errors = []
         
         for i, name in enumerate(jar_name):
             clean_name = name.strip().lower().replace(' ', '_')
             jar = await jar_utils.get_jar_by_name(db, user_id, clean_name)
             if not jar:
-                validation_errors.append(ServiceError(
-                    code="NOT_FOUND",
-                    message=f"Jar '{name}' not found",
-                    field=f"jar_{i+1}_name"
-                ))
-                continue
+                raise ValueError(f"Jar '{name}' not found")
             jars_to_delete.append(jar)
             total_deleted_percent += jar.percent
-
-        if validation_errors:
-            return JarOperationResult(
-                status="error",
-                message="Validation failed for jar deletion",
-                errors=validation_errors
-            )
 
         # --- PASS 2: EXECUTION ---
         deleted_jars_summary = []
@@ -327,17 +299,15 @@ class JarManagementService:
         rebalance_msg = await JarManagementService._redistribute_deleted_percentage(db, user_id, total_deleted_percent)
 
         if len(jar_name) == 1:
-            return JarOperationResult.jar_deleted(
-                jar_name=jars_to_delete[0].name,
-                reason=reason,
-                rebalance_info=rebalance_msg if rebalance_msg else None
-            )
+            result = f"✅ Deleted jar '{jars_to_delete[0].name}'. Reason: {reason}"
+            if rebalance_msg:
+                result += f"\n{rebalance_msg}"
+            return result
         else:
-            return JarOperationResult.success(
-                message=f"Successfully deleted {len(jar_name)} jars: {', '.join(deleted_jars_summary)}. Reason: {reason}",
-                data={"deleted_jars": [jar.name for jar in jars_to_delete], "reason": reason},
-                warnings=[rebalance_msg] if rebalance_msg else None
-            )
+            result = f"✅ Successfully deleted {len(jar_name)} jars: {', '.join(deleted_jars_summary)}. Reason: {reason}"
+            if rebalance_msg:
+                result += f"\n{rebalance_msg}"
+            return result
             
     @staticmethod
     async def get_jars(db: AsyncIOMotorDatabase, user_id: str, jar_name: Optional[str] = None, description: str = "") -> Dict[str, Any]:
@@ -351,6 +321,11 @@ class JarManagementService:
         Returns:
             A dictionary containing the list of jars and a descriptive summary.
         """
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+            
         if jar_name:
             # Case 1: Fetch a single jar
             jar = await jar_utils.get_jar_by_name(db, user_id, jar_name)
@@ -377,6 +352,11 @@ class JarManagementService:
     @staticmethod
     async def list_jars(db: AsyncIOMotorDatabase, user_id: str) -> str:
         """List all jars with current status."""
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+            
         jars = await jar_utils.get_all_jars_for_user(db, user_id)
         
         if not jars:
@@ -396,7 +376,7 @@ class JarManagementService:
             total_percent += jar.percent
             total_amount += jar.amount
         
-        total_income = await user_setting_utils.get_user_total_income(db, user_id)
+        total_income = await JarManagementService._get_total_income(db, user_id)
         summary = f"📊 Total allocation: {format_percentage(total_percent)} ({format_currency(total_amount)}) from {format_currency(total_income)} income"
         
         return "\n".join(jar_list) + f"\n\n{summary}"
@@ -404,6 +384,13 @@ class JarManagementService:
     @staticmethod
     async def find_jar_by_keywords(db: AsyncIOMotorDatabase, user_id: str, keywords: str) -> Optional[JarInDB]:
         """Find jar by matching keywords in name or description."""
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        if not keywords or not keywords.strip():
+            raise ValueError("Keywords cannot be empty")
+            
         keywords_lower = keywords.lower()
         
         jars = await jar_utils.get_all_jars_for_user(db, user_id)
@@ -421,24 +408,6 @@ class JarManagementService:
         return None
 
     @staticmethod
-    async def validate_jar_name(db: AsyncIOMotorDatabase, user_id: str, name: str, exclude_current: Optional[str] = None) -> Tuple[bool, str]:
-        """Validate jar name for uniqueness and format."""
-        if not name or not name.strip():
-            return False, "Jar name cannot be empty"
-        
-        clean_name = name.strip().lower().replace(' ', '_')
-        if len(clean_name) < 2:
-            return False, "Jar name too short (minimum 2 characters)"
-        
-        jars = await jar_utils.get_all_jars_for_user(db, user_id)
-        existing_names = [j.name.lower() for j in jars if j.name.lower() != (exclude_current.lower() if exclude_current else "")]
-        
-        if clean_name in existing_names:
-            return False, f"Jar name '{clean_name}' already exists"
-        
-        return True, ""
-
-    @staticmethod
     def request_clarification(question: str, suggestions: Optional[str] = None) -> str:
         """Request clarification from user."""
         response = f"❓ {question}"
@@ -447,25 +416,28 @@ class JarManagementService:
         return response
     
     @staticmethod
-    async def validate_jar_data(db: AsyncIOMotorDatabase, user_id: str, jar_data: JarCreate) -> Tuple[bool, List[str]]:
+    async def validate_jar_data(db: AsyncIOMotorDatabase, user_id: str, jar_data: JarCreate) -> None:
         """Validate jar data for consistency."""
-        errors = []
-        
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        if jar_data is None:
+            raise ValueError("Jar data cannot be None")
+            
         if not jar_data.name or not jar_data.name.strip():
-            errors.append("Jar name cannot be empty")
+            raise ValueError("Jar name cannot be empty")
         
         if not validate_percentage_range(jar_data.percent):
-            errors.append(f"Percent {jar_data.percent} must be between 0.0 and 1.0")
+            raise ValueError(f"Percent {jar_data.percent} must be between 0.0 and 1.0")
         
         if not validate_percentage_range(jar_data.current_percent):
-            errors.append(f"Current percent {jar_data.current_percent} must be between 0.0 and 1.0")
+            raise ValueError(f"Current percent {jar_data.current_percent} must be between 0.0 and 1.0")
         
-        total_income = await user_setting_utils.get_user_total_income(db, user_id)
+        total_income = await JarManagementService._get_total_income(db, user_id)
         expected_amount = jar_data.percent * total_income
         if abs(jar_data.amount - expected_amount) > 0.01:
-            errors.append(f"Amount {jar_data.amount} doesn't match percent calculation {expected_amount}")
-        
-        return len(errors) == 0, errors
+            raise ValueError(f"Amount {jar_data.amount} doesn't match percent calculation {expected_amount}")
 
     @staticmethod
     async def _rebalance_after_creation(db: AsyncIOMotorDatabase, user_id: str, new_jar_names: List[str]) -> str:
@@ -490,7 +462,7 @@ class JarManagementService:
         scale_factor = remaining_space / other_jars_total_percent
         
         rebalanced_list = []
-        total_income = await user_setting_utils.get_user_total_income(db, user_id)
+        total_income = await JarManagementService._get_total_income(db, user_id)
         for jar in other_jars:
             old_percent = jar.percent
             new_percent = max(0.0, jar.percent * scale_factor)
@@ -501,16 +473,21 @@ class JarManagementService:
             updated_jar = await jar_utils.update_jar_in_db(db, user_id, jar.name, update_data.model_dump(exclude_unset=True))
             rebalanced_list.append(f"{updated_jar.name}: {format_percentage(old_percent)} → {format_percentage(updated_jar.percent)}")
 
-        # Rounding correction
+        # Rounding correction - only adjust jars that are NOT the newly created ones
         current_total = await JarManagementService._calculate_jar_total_allocation(db, user_id)
-        if abs(current_total - 1.0) > 0.001 and other_jars:
-            largest_jar = max(other_jars, key=lambda j: j.percent)
-            new_percent = largest_jar.percent + (1.0 - current_total)
-            update_data = JarUpdate(
-                percent=new_percent,
-                amount=new_percent * total_income
-            )
-            await jar_utils.update_jar_in_db(db, user_id, largest_jar.name, update_data.model_dump(exclude_unset=True))
+        if abs(current_total - 1.0) > 0.001:
+            # Get fresh data for OTHER jars only (exclude newly created jars)
+            all_current_jars = await jar_utils.get_all_jars_for_user(db, user_id)
+            other_current_jars = [j for j in all_current_jars if j.name not in new_jar_names]
+            
+            if other_current_jars:
+                largest_other_jar = max(other_current_jars, key=lambda j: j.percent)
+                new_percent = largest_other_jar.percent + (1.0 - current_total)
+                update_data = JarUpdate(
+                    percent=new_percent,
+                    amount=new_percent * total_income
+                )
+                await jar_utils.update_jar_in_db(db, user_id, largest_other_jar.name, update_data.model_dump(exclude_unset=True))
 
         return f"📊 Rebalanced other jars: {', '.join(rebalanced_list)}"
 
@@ -531,7 +508,7 @@ class JarManagementService:
         if remaining_space < 0:
             remaining_space = 0
         
-        total_income = await user_setting_utils.get_user_total_income(db, user_id)
+        total_income = await JarManagementService._get_total_income(db, user_id)
         if other_jars_total_percent > 0.001:
             scale_factor = remaining_space / other_jars_total_percent
             for jar in other_jars:
@@ -554,16 +531,21 @@ class JarManagementService:
         other_jars = [j for j in await jar_utils.get_all_jars_for_user(db, user_id) if j.name not in updated_jars_names]
         rebalanced_list = [f"{jar.name} → {format_percentage(jar.percent)}" for jar in other_jars]
 
-        # Rounding correction
+        # Rounding correction - only adjust jars that are NOT the updated ones
         current_total = await JarManagementService._calculate_jar_total_allocation(db, user_id)
-        if abs(current_total - 1.0) > 0.001 and other_jars:
-            largest_jar = max(other_jars, key=lambda j: j.percent)
-            new_percent = largest_jar.percent + (1.0 - current_total)
-            update_data = JarUpdate(
-                percent=new_percent,
-                amount=new_percent * total_income
-            )
-            await jar_utils.update_jar_in_db(db, user_id, jar.name, update_data.model_dump(exclude_unset=True))
+        if abs(current_total - 1.0) > 0.001:
+            # Get fresh data for OTHER jars only (exclude updated jars)
+            all_current_jars = await jar_utils.get_all_jars_for_user(db, user_id)
+            other_current_jars = [j for j in all_current_jars if j.name not in updated_jars_names]
+            
+            if other_current_jars:
+                largest_other_jar = max(other_current_jars, key=lambda j: j.percent)
+                new_percent = largest_other_jar.percent + (1.0 - current_total)
+                update_data = JarUpdate(
+                    percent=new_percent,
+                    amount=new_percent * total_income
+                )
+                await jar_utils.update_jar_in_db(db, user_id, largest_other_jar.name, update_data.model_dump(exclude_unset=True))
 
         
         return f"📊 Rebalanced other jars: {', '.join(rebalanced_list)}"
@@ -578,8 +560,9 @@ class JarManagementService:
         
         remaining_total_percent = sum(j.percent for j in remaining_jars)
         
-        total_income = await user_setting_utils.get_user_total_income(db, user_id)
+        total_income = await JarManagementService._get_total_income(db, user_id)
         if remaining_total_percent < 0.001:
+            # Equal distribution if all jars have 0% allocation
             if len(remaining_jars) > 0:
                 equal_share = (deleted_percent + remaining_total_percent) / len(remaining_jars)
                 for jar in remaining_jars:

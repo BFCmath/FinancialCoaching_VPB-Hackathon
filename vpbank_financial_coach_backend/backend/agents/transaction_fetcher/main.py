@@ -56,21 +56,33 @@ class TransactionFetcher:
         Returns:
             Tuple of (tool_result, tool_calls_made, requires_follow_up)
         """
+        # Validate user query
+        if not user_query or not user_query.strip():
+            return (
+                "❌ Error: User query cannot be empty.",
+                [],
+                False
+            )
+        
         tool_calls_made = []
+        
         try:
             # Build prompt with async database context
             system_prompt = await build_history_fetcher_prompt(user_query, self.db, self.user_id)
             
             # Get LLM's tool decision
-            response = await self.llm_with_tools.ainvoke([
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_query)
-            ])
+            try:
+                response = await self.llm_with_tools.ainvoke([
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_query)
+                ])
+            except Exception as e:
+                return f"❌ LLM call failed: {str(e)}", tool_calls_made, False
 
             if not response.tool_calls:
                 if config.debug_mode:
                     print("🤖 Agent failed to call a tool.")
-                return "I couldn't determine which transactions to fetch. Could you be more specific?", [], False
+                return "❌ Error: I couldn't determine which transactions to fetch. Could you be more specific?", tool_calls_made, False
 
             # Execute the chosen tool
             tool_call = response.tool_calls[0]
@@ -83,45 +95,91 @@ class TransactionFetcher:
             for tool in self.tools:
                 if tool.name == tool_name:
                     tool_calls_made.append(f"{tool_name}(args={tool_args})")
-                    # Use ainvoke for async tools, invoke for sync tools
-                    result = await tool.ainvoke(tool_args)
-                    return result, tool_calls_made, False
+                    
+                    try:
+                        # Use ainvoke for async tools
+                        result = await tool.ainvoke(tool_args)
+                        return result, tool_calls_made, False
+                    
+                    except Exception as e:
+                        return f"❌ Tool {tool_name} failed: {str(e)}", tool_calls_made, False
 
-            return f"Error: Tool {tool_name} not found.", tool_calls_made, False
+            return f"❌ Error: Tool {tool_name} not found.", tool_calls_made, False
 
         except Exception as e:
-            traceback.print_exc()
-            return f"Error: {str(e)}", tool_calls_made, False
+            if config.debug_mode:
+                import traceback
+                traceback.print_exc()
+            return f"❌ Error during processing: {str(e)}", tool_calls_made, False
 
 async def process_task(task: str, db: AsyncIOMotorDatabase, user_id: str, 
                      conversation_history: Optional[List[ConversationTurnInDB]] = None) -> Dict[str, Any]:
     """
-    Main orchestrator interface for the Transaction Fetcher agent.
+    Main orchestrator interface for the Transaction Fetcher agent with standardized return format.
     
     Args:
         task: The user's request for transaction retrieval
-        db: Database instance for backend integration
-        user_id: User identifier for backend context
-        conversation_history: Not used by this stateless agent, but kept for interface consistency.
+        db: Database instance for backend integration (required for production use)
+        user_id: User identifier for backend context (required for production use)
+        conversation_history: Not used by this stateless agent, but kept for interface consistency
         
     Returns:
-        Dict containing response and metadata
+        Dict containing:
+        - response: Agent response text (transaction data)
+        - requires_follow_up: Boolean indicating if agent needs another turn  
+        - tool_calls: List of tool calls made during processing
+        - error: Boolean indicating if an error occurred
     """
+    # Validate required parameters for production use
     if db is None or user_id is None:
         return {
-            "response": "❌ Error: Database connection and user_id are required for fetcher agent.",
-            "requires_follow_up": False, "tool_calls": [], "success": False
+            "response": "❌ Error: Database connection and user_id are required for transaction fetcher agent.",
+            "requires_follow_up": False,
+            "tool_calls": [],
+            "error": True
         }
     
-    agent = TransactionFetcher(db=db, user_id=user_id)
-    result, tool_calls_made, requires_follow_up = await agent.process_request(task)
+    # Validate task input
+    if not task or not task.strip():
+        return {
+            "response": "❌ Error: Task cannot be empty.",
+            "requires_follow_up": False,
+            "tool_calls": [],
+            "error": True
+        }
+    
+    try:
+        agent = TransactionFetcher(db=db, user_id=user_id)
+        result, tool_calls_made, requires_follow_up = await agent.process_request(task)
 
-    if config.verbose_logging:
-        print(f"📝 Transaction fetcher completed task. Follow-up: {requires_follow_up}")
+        if config.verbose_logging:
+            print(f"📝 Transaction fetcher completed task. Follow-up: {requires_follow_up}")
 
-    return {
-        "response": result,
-        "requires_follow_up": requires_follow_up,
-        "tool_calls": tool_calls_made,
-        "success": "Error" not in str(result)
-    }
+        return {
+            "response": result,
+            "requires_follow_up": requires_follow_up,
+            "tool_calls": tool_calls_made,
+            "error": False
+        }
+    
+    except ValueError as e:
+        # Handle validation errors from services
+        return {
+            "response": f"❌ Validation error: {str(e)}",
+            "requires_follow_up": False,
+            "tool_calls": [],
+            "error": True
+        }
+    
+    except Exception as e:
+        # Handle any unexpected errors
+        if config.debug_mode:
+            import traceback
+            traceback.print_exc()
+        
+        return {
+            "response": f"❌ Transaction fetcher failed with unexpected error: {str(e)}",
+            "requires_follow_up": False,
+            "tool_calls": [],
+            "error": True
+        }

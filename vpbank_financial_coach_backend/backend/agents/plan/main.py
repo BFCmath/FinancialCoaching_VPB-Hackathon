@@ -72,8 +72,6 @@ class BudgetAdvisorAgent:
         # Create service container with user context
         self.services = PlanServiceContainer(db, user_id)
         
-        # Create conversation service for stateless stage management
-        self.conversation_service = ConversationService(db, user_id)
     
     def _get_tools_for_stage(self, stage: str):
         """Get tools for the specified stage."""
@@ -100,8 +98,12 @@ class BudgetAdvisorAgent:
         tool_calls_made = []
         
         try:
+            # Validate user input
+            if not task or not task.strip():
+                raise ValueError("User task cannot be empty for plan agent")
+            
             # Get current stage from conversation history (stateless)
-            current_stage = await self.conversation_service.get_current_plan_stage()
+            current_stage = await ConversationService.get_plan_stage(self.db, self.user_id)
             
             # Handle special "ACCEPT" transition from Stage 2 to 3
             if current_stage == "2" and task.strip().upper() == "ACCEPT":
@@ -136,8 +138,7 @@ class BudgetAdvisorAgent:
                         "response": response.content,
                         "requires_follow_up": False,
                         "tool_calls": tool_calls_made,
-                        "stage": current_stage,
-                        "metadata": ConversationService.create_plan_stage_metadata(current_stage)
+                        "plan_stage": current_stage,
                     }
                 
                 # Add AI message to conversation
@@ -162,7 +163,7 @@ class BudgetAdvisorAgent:
                         # Check if this is a terminating tool
                         if tool_name in TERMINATING_TOOLS.get(current_stage, []):
                             # Update stage based on tool result
-                            new_stage = str(tool_result.get("stage", current_stage))
+                            new_stage = str(tool_result.get("plan_stage", current_stage))
                             
                             # Format response
                             user_response = tool_result.get("response", "")
@@ -178,11 +179,7 @@ class BudgetAdvisorAgent:
                                 "response": user_response,
                                 "requires_follow_up": requires_follow_up,
                                 "tool_calls": tool_calls_made,
-                                "stage": new_stage,
-                                "metadata": ConversationService.create_plan_stage_metadata(
-                                    new_stage, 
-                                    {"tool_result": tool_name, "stage_transition": f"{current_stage}->{new_stage}"}
-                                )
+                                "plan_stage": new_stage,
                             }
                         
                         else:
@@ -205,8 +202,7 @@ class BudgetAdvisorAgent:
                 "response": error_response,
                 "requires_follow_up": False,
                 "tool_calls": tool_calls_made,
-                "stage": current_stage,
-                "metadata": ConversationService.create_plan_stage_metadata(current_stage, {"error": "max_iterations"})
+                "plan_stage": current_stage,
             }
         
         except Exception as e:
@@ -214,17 +210,11 @@ class BudgetAdvisorAgent:
             
             # Return error with stage info for orchestrator
             error_response = f"❌ Agent error: {str(e)}"
-            try:
-                current_stage = await self.conversation_service.get_current_plan_stage()
-            except:
-                current_stage = "1"  # Fallback to stage 1 on error
-            
             return {
                 "response": error_response,
                 "requires_follow_up": False,
                 "tool_calls": tool_calls_made,
-                "stage": current_stage,
-                "metadata": ConversationService.create_plan_stage_metadata(current_stage, {"error": str(e)})
+                "plan_stage": current_stage,
             }
 
 
@@ -247,7 +237,7 @@ async def process_task(task: str, db: AsyncIOMotorDatabase, user_id: str,
         
     Examples:
         process_task("I want to save for vacation", db, "user123")
-        → {"response": "Let me help you create a vacation savings plan...", "stage": "1", ...}
+        → {"response": "Let me help you create a vacation savings plan...", "plan_stage": "1", ...}
         
     Note: Stage is now determined from conversation history, making this fully stateless.
     """
@@ -257,7 +247,7 @@ async def process_task(task: str, db: AsyncIOMotorDatabase, user_id: str,
             "response": "❌ Error: Database connection is required for budget advisor agent.",
             "requires_follow_up": False,
             "tool_calls": [],
-            "stage": "1"
+            "plan_stage": "1"
         }
     
     if user_id is None:
@@ -265,11 +255,37 @@ async def process_task(task: str, db: AsyncIOMotorDatabase, user_id: str,
             "response": "❌ Error: User ID is required for budget advisor agent.",
             "requires_follow_up": False,
             "tool_calls": [],
-            "stage": "1"
+            "plan_stage": "1"
         }
     
-    agent = BudgetAdvisorAgent(db, user_id)
-    return await agent.process_request(task, conversation_history)
+    # Validate task input
+    if not task or not task.strip():
+        return {
+            "response": "❌ Error: User task cannot be empty for budget advisor agent.",
+            "requires_follow_up": False,
+            "tool_calls": [],
+            "plan_stage": "1"
+        }
+    
+    try:
+        agent = BudgetAdvisorAgent(db, user_id)
+        return await agent.process_request(task, conversation_history)
+    except ValueError as e:
+        # Service validation errors
+        return {
+            "response": f"❌ Budget advisor validation error: {str(e)}",
+            "requires_follow_up": False,
+            "tool_calls": [],
+            "plan_stage": "1"
+        }
+    except Exception as e:
+        # Unexpected errors
+        return {
+            "response": f"❌ Budget advisor unexpected error: {str(e)}",
+            "requires_follow_up": False,
+            "tool_calls": [],
+            "plan_stage": "1"
+        }
 
 
 # Legacy function names for backward compatibility

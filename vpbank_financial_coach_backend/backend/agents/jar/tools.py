@@ -70,14 +70,21 @@ def get_all_jar_tools(services: JarServiceContainer) -> List[tool]:
         Note: For each jar, provide either percent OR amount, not both.
         All lists must have the same length.
         """
-        return await JarManagementService.create_jar(
-            services.db, services.user_id,
-            name=name,
-            description=description,
-            percent=percent,
-            amount=amount,
-            confidence=confidence
-        )
+        try:
+            return await JarManagementService.create_jar(
+                services.db, services.user_id,
+                name=name,
+                description=description,
+                percent=percent,
+                amount=amount,
+                confidence=confidence
+            )
+        except ValueError as e:
+            # Service validation errors
+            return f"❌ Failed to create jar(s): {str(e)}"
+        except Exception as e:
+            # Unexpected errors
+            return f"❌ An unexpected error occurred while creating jar(s): {str(e)}"
 
     @tool
     async def update_jar(
@@ -101,15 +108,22 @@ def get_all_jar_tools(services: JarServiceContainer) -> List[tool]:
         Note: All lists must have the same length as jar_name.
         For each jar, provide either new_percent OR new_amount, not both.
         """
-        return await JarManagementService.update_jar(
-            services.db, services.user_id,
-            jar_name=jar_name,
-            new_name=new_name,
-            new_description=new_description,
-            new_percent=new_percent,
-            new_amount=new_amount,
-            confidence=confidence
-        )
+        try:
+            return await JarManagementService.update_jar(
+                services.db, services.user_id,
+                jar_name=jar_name,
+                new_name=new_name,
+                new_description=new_description,
+                new_percent=new_percent,
+                new_amount=new_amount,
+                confidence=confidence
+            )
+        except ValueError as e:
+            # Service validation errors
+            return f"❌ Failed to update jar(s): {str(e)}"
+        except Exception as e:
+            # Unexpected errors
+            return f"❌ An unexpected error occurred while updating jar(s): {str(e)}"
 
     @tool
     async def delete_jar(jar_name: List[str], reason: str) -> str:
@@ -119,12 +133,26 @@ def get_all_jar_tools(services: JarServiceContainer) -> List[tool]:
             jar_name: List of jar names to delete
             reason: Reason for deletion
         """
-        return await JarManagementService.delete_jar(services.db, services.user_id, jar_name=jar_name, reason=reason)
+        try:
+            return await JarManagementService.delete_jar(services.db, services.user_id, jar_name=jar_name, reason=reason)
+        except ValueError as e:
+            # Service validation errors
+            return f"❌ Failed to delete jar(s): {str(e)}"
+        except Exception as e:
+            # Unexpected errors
+            return f"❌ An unexpected error occurred while deleting jar(s): {str(e)}"
 
     @tool
     async def list_jars() -> str:
         """List all budget jars with their current balances, budgets, and percentages."""
-        return await JarManagementService.list_jars(services.db, services.user_id)
+        try:
+            return await JarManagementService.list_jars(services.db, services.user_id)
+        except ValueError as e:
+            # Service validation errors
+            return f"❌ Failed to list jars: {str(e)}"
+        except Exception as e:
+            # Unexpected errors
+            return f"❌ An unexpected error occurred while listing jars: {str(e)}"
 
     @tool
     async def request_clarification(question: str, suggestions: Optional[str] = None) -> str:
@@ -138,12 +166,15 @@ def get_all_jar_tools(services: JarServiceContainer) -> List[tool]:
             question: Question to ask for clarification
             suggestions: Optional suggestions to help user
         """
-        # Note: Conversation locking handled by orchestrator in backend
-        
-        response = f"Clarification needed: {question}"
-        if suggestions:
-            response += f"\nSuggestions: {suggestions}"
-        return response
+        try:
+            # Note: Conversation locking handled by orchestrator in backend
+            response = f"Clarification needed: {question}"
+            if suggestions:
+                response += f"\nSuggestions: {suggestions}"
+            return response
+        except Exception as e:
+            # Handle any unexpected errors in formatting
+            return f"❌ Error asking for clarification: {str(e)}"
 
     # =============================================================================
     # TOOL REGISTRATION
