@@ -163,8 +163,7 @@ Assistant:
                     except Exception as e:
                         error_msg = f"❌ Tool {tool_name} failed: {e}"
                         messages.append(ToolMessage(content=error_msg, tool_call_id=tool_call_id))
-                        if config.debug_mode:
-                            print(error_msg)
+                        print(error_msg)
 
             final_response = "❌ Classifier could not provide a complete answer within the allowed steps."
             return final_response, tool_calls_made, False

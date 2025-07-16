@@ -128,7 +128,6 @@ class BudgetAdvisorAgent:
             # ReAct loop
             for i in range(config.max_react_iterations):
                 response = await llm_with_tools.ainvoke(messages)
-                # response = llm_with_tools.invoke(messages)
                 
                 # If no tool calls, return direct response
                 if not response.tool_calls:
@@ -157,10 +156,8 @@ class BudgetAdvisorAgent:
                     
                     try:
                         # Use ainvoke for async tools, invoke for sync tools
-                        if inspect.iscoroutinefunction(tool_func.func):
-                            tool_result = await tool_func.ainvoke(tool_args)
-                        else:
-                            tool_result = tool_func.invoke(tool_args)
+                        tool_result = await tool_func.ainvoke(tool_args)
+                        
                         
                         # Check if this is a terminating tool
                         if tool_name in TERMINATING_TOOLS.get(current_stage, []):
@@ -213,8 +210,7 @@ class BudgetAdvisorAgent:
             }
         
         except Exception as e:
-            if config.debug_mode:
-                traceback.print_exc()
+            traceback.print_exc()
             
             # Return error with stage info for orchestrator
             error_response = f"❌ Agent error: {str(e)}"

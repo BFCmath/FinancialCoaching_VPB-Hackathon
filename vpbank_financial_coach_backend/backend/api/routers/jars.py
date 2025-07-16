@@ -52,26 +52,35 @@ async def create_jar(
             detail="Either 'percent' or 'amount' must be provided."
         )
     
-    # Calculate missing field
+    # Calculate missing field - ensure both percent and amount are always defined
     if jar_in.percent is not None and jar_in.amount is None:
+        # Only percent provided, calculate amount
+        percent = jar_in.percent
         amount = jar_in.percent * total_income
     elif jar_in.amount is not None and jar_in.percent is None:
+        # Only amount provided, calculate percent
         percent = jar_in.amount / total_income if total_income > 0 else 0.0
+        amount = jar_in.amount
     else:
         # Both provided, use as-is
-        amount = jar_in.amount
         percent = jar_in.percent
+        amount = jar_in.amount
     
     # Create jar dictionary
     jar_dict = jar_in.model_dump()
     jar_dict['user_id'] = user_id
-    jar_dict['percent'] = percent if jar_in.percent is not None else jar_in.amount / total_income
-    jar_dict['amount'] = amount if jar_in.amount is not None else jar_in.percent * total_income
+    jar_dict['percent'] = percent
+    jar_dict['amount'] = amount
     jar_dict['current_amount'] = 0.0  # Start with zero balance
     
     # Use utils to create jar
     created_jar = await jar_utils.create_jar_in_db(db, jar_dict)
-    return created_jar
+    
+    # Rebalance all jars to ensure total allocation is 100%
+    await jar_utils.rebalance_jars_to_100_percent(db, user_id)
+    
+    # Return the updated jar after rebalancing
+    return await jar_utils.get_jar_by_name(db, user_id, created_jar.name)
 
 @router.get("/{jar_name}", response_model=jar_model.JarInDB)
 async def get_jar(
@@ -132,7 +141,11 @@ async def update_jar(
             detail=f"Jar '{jar_name}' not found."
         )
     
-    return updated_jar
+    # Rebalance all jars to ensure total allocation is 100%
+    await jar_utils.rebalance_jars_to_100_percent(db, user_id)
+    
+    # Return the updated jar after rebalancing
+    return await jar_utils.get_jar_by_name(db, user_id, updated_jar.name)
 
 @router.delete("/{jar_name}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_jar(
@@ -151,5 +164,12 @@ async def delete_jar(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Jar '{jar_name}' not found."
         )
+    
+    # Rebalance remaining jars to ensure total allocation is 100%
+    try:
+        await jar_utils.rebalance_jars_to_100_percent(db, user_id)
+    except ValueError:
+        # No jars left to rebalance, which is fine
+        pass
     
     return

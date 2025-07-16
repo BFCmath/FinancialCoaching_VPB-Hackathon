@@ -33,9 +33,9 @@ class KnowledgeBaseAgent:
             user_id: User identifier for data isolation
         """
         # Validate required parameters
-        if not db:
+        if db is None:
             raise ValueError("Database connection is required for production knowledge agent")
-        if not user_id:
+        if user_id is None:
             raise ValueError("User ID is required for production knowledge agent")
             
         self.db = db
@@ -146,10 +146,8 @@ class KnowledgeBaseAgent:
                         
                         if tool_func:
                             try:
-                                if inspect.iscoroutinefunction(tool_func.func):
-                                    result = await tool_func.ainvoke(tool_args)
-                                else:
-                                    result = tool_func.invoke(tool_args)
+                                result = await tool_func.ainvoke(tool_args)
+
                                 
                                 # Special handling for respond() tool - THIS IS THE KEY FIX
                                 if tool_name == "respond" and isinstance(result, dict):
@@ -174,37 +172,31 @@ class KnowledgeBaseAgent:
                                     content=error_msg,
                                     tool_call_id=tool_call_id
                                 ))
-                                if config.debug_mode:
-                                    print(f"❌ Error: {error_msg}")
+                                print(f"❌ Error: {error_msg}")
                         else:
                             error_msg = f"❌ Tool {tool_name} not found"
                             messages.append(ToolMessage(
                                 content=error_msg,
                                 tool_call_id=tool_call_id
                             ))
-                            if config.debug_mode:
-                                print(f"❌ Error: {error_msg}")
+                            print(f"❌ Error: {error_msg}")
                     
                     # Continue the loop to let LLM process tool results and potentially call respond()
                     continue
                 
                 else:
                     # No tool calls - LLM provided direct response without tools
-                    if config.debug_mode:
-                        print("🤖 No tool calls - direct response")
+                    print("🤖 No tool calls - direct response")
                     return response.content if hasattr(response, 'content') else str(response)
             
             # If we reach here, max iterations exceeded without respond() being called
-            if config.debug_mode:
-                print(f"⚠️ Max iterations ({max_iterations}) reached without respond() call")
+            print(f"⚠️ Max iterations ({max_iterations}) reached without respond() call")
             
             return f"❌ Could not provide a complete answer within {max_iterations} reasoning steps. Please try a simpler question."
                 
         except Exception as e:
             error_msg = f"❌ Error processing request: {str(e)}"
-            if config.debug_mode:
-                import traceback
-                print(f"🐛 Full error traceback:\n{traceback.format_exc()}")
+            print(f"🐛 Full error traceback:\n{traceback.format_exc()}")
             return error_msg
 
 
@@ -240,7 +232,7 @@ def get_knowledge(user_query: str, db: AsyncIOMotorDatabase = None, user_id: str
     Legacy function name for backward compatibility.
     Use process_task() for new integrations.
     """
-    if not db or not user_id:
+    if db is None or user_id is None:
         raise ValueError("Enhanced Pattern 2 requires db and user_id parameters")
     return process_task(user_query, db, user_id)
 

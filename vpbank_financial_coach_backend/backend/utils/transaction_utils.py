@@ -41,15 +41,34 @@ async def create_transaction_in_db(db: AsyncIOMotorDatabase, transaction_dict: D
 
 async def get_transaction_by_id(db: AsyncIOMotorDatabase, user_id: str, transaction_id: str) -> Optional[transaction.TransactionInDB]:
     """Retrieves a specific transaction by its ID for a user."""
-    transaction_doc = await db[TRANSACTIONS_COLLECTION].find_one({"_id": transaction_id, "user_id": user_id})
+    from bson import ObjectId
+    from bson.errors import InvalidId
+    
+    # Try to convert string to ObjectId for MongoDB query
+    try:
+        obj_id = ObjectId(transaction_id)
+        transaction_doc = await db[TRANSACTIONS_COLLECTION].find_one({"_id": obj_id, "user_id": user_id})
+    except InvalidId as e:
+        transaction_doc = await db[TRANSACTIONS_COLLECTION].find_one({"_id": transaction_id, "user_id": user_id})
+    
     if transaction_doc:
         transaction_doc["_id"] = str(transaction_doc["_id"])
         return transaction.TransactionInDB(**transaction_doc)
+    else:
+        print(f"[DEBUG] No transaction found in database")
     return None
 
 async def delete_transaction_by_id(db: AsyncIOMotorDatabase, user_id: str, transaction_id: str) -> bool:
     """Deletes a transaction by its ID for a specific user."""
-    result = await db[TRANSACTIONS_COLLECTION].delete_one({"_id": transaction_id, "user_id": user_id})
+    from bson import ObjectId
+    from bson.errors import InvalidId
+    
+    # Try to convert string to ObjectId for MongoDB query
+    try:
+        obj_id = ObjectId(transaction_id)
+        result = await db[TRANSACTIONS_COLLECTION].delete_one({"_id": obj_id, "user_id": user_id})
+    except InvalidId:
+        result = await db[TRANSACTIONS_COLLECTION].delete_one({"_id": transaction_id, "user_id": user_id})
     return result.deleted_count > 0
 
 async def get_transactions_by_date_range_for_user(db: AsyncIOMotorDatabase, user_id: str, start_date: str, end_date: str = None) -> List[transaction.TransactionInDB]:

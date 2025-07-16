@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 # Import database utilities and models
-from backend.utils import db_utils
+from backend.utils import general_utils
 from backend.models.fee import RecurringFeeInDB, RecurringFeeCreate, RecurringFeeBase
 from .core_services import CalculationService
 from .confidence_service import ConfidenceService
@@ -29,17 +29,17 @@ class FeeManagementService:
     @staticmethod
     async def save_recurring_fee(db: AsyncIOMotorDatabase, user_id: str, fee_data: RecurringFeeCreate) -> RecurringFeeInDB:
         """Save recurring fee to database."""
-        return await db_utils.create_fee_in_db(db, user_id, fee_data)
+        return await general_utils.create_fee_in_db(db, user_id, fee_data)
     
     @staticmethod
     async def get_recurring_fee(db: AsyncIOMotorDatabase, user_id: str, fee_name: str) -> Optional[RecurringFeeInDB]:
         """Get recurring fee by name."""
-        return await db_utils.get_fee_by_name(db, user_id, fee_name)
+        return await general_utils.get_fee_by_name(db, user_id, fee_name)
     
     @staticmethod
     async def get_all_recurring_fees(db: AsyncIOMotorDatabase, user_id: str) -> List[RecurringFeeInDB]:
         """Get all recurring fees."""
-        return await db_utils.get_all_fees_for_user(db, user_id)
+        return await general_utils.get_all_fees_for_user(db, user_id)
     
     @staticmethod
     async def get_active_recurring_fees(db: AsyncIOMotorDatabase, user_id: str) -> List[RecurringFeeInDB]:
@@ -50,7 +50,7 @@ class FeeManagementService:
     @staticmethod
     async def delete_recurring_fee(db: AsyncIOMotorDatabase, user_id: str, fee_name: str) -> bool:
         """Delete recurring fee from database."""
-        return await db_utils.delete_fee_by_name(db, user_id, fee_name)
+        return await general_utils.delete_fee_by_name(db, user_id, fee_name)
     
     @staticmethod
     def calculate_next_fee_occurrence(pattern_type: str, pattern_details: Optional[List[int]], from_date: Optional[datetime] = None) -> datetime:
@@ -117,7 +117,7 @@ class FeeManagementService:
             return f"❌ {error_msg}"
         
         # Validate target jar
-        jar = await db_utils.get_jar_by_name(db, user_id, target_jar.lower().replace(' ', '_'))
+        jar = await general_utils.get_jar_by_name(db, user_id, target_jar.lower().replace(' ', '_'))
         if not jar:
             return f"❌ Target jar '{target_jar}' not found"
         
@@ -131,18 +131,23 @@ class FeeManagementService:
         
         next_occurrence = FeeManagementService.calculate_next_fee_occurrence(pattern_type, pattern_details)
         
-        fee_data = RecurringFeeInDB(
+        fee_to_create = RecurringFeeCreate(
             name=name,
             amount=amount,
             description=description,
             target_jar=jar.name,
             pattern_type=pattern_type,
             pattern_details=pattern_details or [],
-            next_occurrence=next_occurrence,
-            is_active=True
         )
+
+        fee_dict_for_db = fee_to_create.dict()
+        fee_dict_for_db["user_id"] = user_id
+        fee_dict_for_db["next_occurrence"] = next_occurrence
+        fee_dict_for_db["created_date"] = datetime.utcnow()
+        fee_dict_for_db["is_active"] = True
         
-        await FeeManagementService.save_recurring_fee(db, user_id, fee_data)
+        await general_utils.create_fee_in_db(db, fee_dict_for_db)
+
         
         pattern_desc = FeeManagementService._format_pattern_description(pattern_type, pattern_details)
         result = f"Created recurring fee '{name}': {CalculationService.format_currency(amount)} {pattern_desc} → {jar.name} jar. Next: {next_occurrence.strftime('%Y-%m-%d')}"
@@ -184,7 +189,7 @@ class FeeManagementService:
             changes.append("pattern details updated")
         
         if new_target_jar is not None:
-            jar = await db_utils.get_jar_by_name(db, user_id, new_target_jar.lower().replace(' ', '_'))
+            jar = await general_utils.get_jar_by_name(db, user_id, new_target_jar.lower().replace(' ', '_'))
             if not jar:
                 return f"❌ Target jar '{new_target_jar}' not found"
             old_jar = fee.target_jar
@@ -202,7 +207,7 @@ class FeeManagementService:
             changes.append(f"next occurrence: {update_data.next_occurrence.strftime('%Y-%m-%d')}")
         
         if changes:
-            await db_utils.update_fee_in_db(db, user_id, fee_name, update_data)
+            await general_utils.update_fee_in_db(db, user_id, fee_name, update_data)
         
         changes_str = ", ".join(changes) if changes else "no changes"
         result = f"Updated fee '{fee_name}': {changes_str}"
@@ -230,7 +235,7 @@ class FeeManagementService:
             fees = [f for f in fees if f.is_active]
         
         if target_jar:
-            jar = await db_utils.get_jar_by_name(db, user_id, target_jar.lower().replace(' ', '_'))
+            jar = await general_utils.get_jar_by_name(db, user_id, target_jar.lower().replace(' ', '_'))
             if jar:
                 fees = [f for f in fees if f.target_jar == jar.name]
             else:

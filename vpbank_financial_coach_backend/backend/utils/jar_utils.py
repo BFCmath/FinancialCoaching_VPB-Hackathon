@@ -175,3 +175,101 @@ async def subtract_money_from_jar(db: AsyncIOMotorDatabase, user_id: str, jar_na
         result["_id"] = str(result["_id"])
         return jar.JarInDB(**result)
     return None
+
+async def rebalance_jars_to_100_percent(db: AsyncIOMotorDatabase, user_id: str) -> bool:
+    """
+    Rebalance all jars to ensure total allocation equals 100%.
+    
+    This function:
+    1. Calculates current total allocation
+    2. If not 100%, proportionally adjusts all jars to sum to 100%
+    3. Updates jar amounts based on user's total income
+    4. Handles rounding errors by adjusting the largest jar
+    
+    Args:
+        db: Database connection
+        user_id: User's ID
+        
+    Returns:
+        bool: True if rebalancing was performed, False if no rebalancing needed
+        
+    Raises:
+        ValueError: If user has no jars to rebalance
+    """
+    from backend.utils.user_setting_utils import get_user_total_income
+    
+    # Get all user's jars
+    jars = await get_all_jars_for_user(db, user_id)
+    
+    if not jars:
+        raise ValueError("No jars found for user - cannot rebalance")
+    
+    # Calculate current total allocation
+    current_total_percent = sum(jar.percent for jar in jars)
+    
+    # If already at 100% (within tolerance), no rebalancing needed
+    if abs(current_total_percent - 1.0) <= 0.001:
+        return False
+    
+    # Get user's total income for amount calculations
+    total_income = await get_user_total_income(db, user_id)
+    
+    # Calculate scaling factor to make total = 100%
+    if current_total_percent > 0:
+        scale_factor = 1.0 / current_total_percent
+    else:
+        # If all jars are 0%, distribute equally
+        scale_factor = 1.0
+        equal_percent = 1.0 / len(jars)
+        for jar in jars:
+            jar.percent = equal_percent
+    
+    # Apply scaling to all jars
+    updated_jars = []
+    total_after_scaling = 0.0
+    
+    for jar in jars:
+        if current_total_percent > 0:
+            new_percent = jar.percent * scale_factor
+        else:
+            new_percent = equal_percent
+            
+        new_amount = new_percent * total_income
+        
+        # Calculate new current_percent (preserve ratio if possible)
+        if jar.amount > 0:
+            current_ratio = jar.current_amount / jar.amount
+            new_current_percent = min(current_ratio, 1.0)
+        else:
+            new_current_percent = jar.current_percent
+        
+        update_data = {
+            "percent": new_percent,
+            "amount": new_amount,
+            "current_percent": new_current_percent
+        }
+        
+        updated_jar = await update_jar_in_db(db, user_id, jar.name, update_data)
+        if updated_jar:
+            updated_jars.append(updated_jar)
+            total_after_scaling += updated_jar.percent
+    
+    # Handle rounding errors - adjust the largest jar to make total exactly 1.0
+    if updated_jars and abs(total_after_scaling - 1.0) > 0.001:
+        largest_jar = max(updated_jars, key=lambda j: j.percent)
+        adjustment = 1.0 - total_after_scaling
+        new_percent = largest_jar.percent + adjustment
+        new_amount = new_percent * total_income
+        
+        # Ensure percent stays within valid range
+        new_percent = max(0.0, min(1.0, new_percent))
+        new_amount = new_percent * total_income
+        
+        update_data = {
+            "percent": new_percent,
+            "amount": new_amount
+        }
+        
+        await update_jar_in_db(db, user_id, largest_jar.name, update_data)
+    
+    return True

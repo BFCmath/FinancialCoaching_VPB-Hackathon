@@ -84,17 +84,13 @@ class TransactionFetcher:
                 if tool.name == tool_name:
                     tool_calls_made.append(f"{tool_name}(args={tool_args})")
                     # Use ainvoke for async tools, invoke for sync tools
-                    if inspect.iscoroutinefunction(tool.func):
-                        result = await tool.ainvoke(tool_args)
-                    else:
-                        result = tool.invoke(tool_args)
+                    result = await tool.ainvoke(tool_args)
                     return result, tool_calls_made, False
 
             return f"Error: Tool {tool_name} not found.", tool_calls_made, False
 
         except Exception as e:
-            if config.debug_mode:
-                traceback.print_exc()
+            traceback.print_exc()
             return f"Error: {str(e)}", tool_calls_made, False
 
 async def process_task(task: str, db: AsyncIOMotorDatabase, user_id: str, 

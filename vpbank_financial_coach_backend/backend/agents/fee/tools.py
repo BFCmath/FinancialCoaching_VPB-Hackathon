@@ -152,7 +152,6 @@ def get_all_fee_tools(services: FeeServiceContainer) -> List[tool]:
         return await FeeManagementService.delete_recurring_fee(services.db, services.user_id, fee_name, reason)
 
     @tool
-    @tool
     async def list_recurring_fees(active_only: bool = True, target_jar: Optional[str] = None) -> str:
         """
         FINAL ACTION: Lists all recurring fees with optional filters.

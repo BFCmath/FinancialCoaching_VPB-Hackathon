@@ -13,7 +13,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from backend.utils import db_utils
+from backend.utils import general_utils
 from .transaction_service import TransactionQueryService
 from .jar_service import JarManagementService
 
@@ -83,7 +83,7 @@ class AgentCommunicationService:
             jar_service = JarManagementService()
             
             if jar_name:
-                jar = await db_utils.get_jar_by_name(db, user_id, jar_name.lower().replace(' ', '_'))
+                jar = await general_utils.get_jar_by_name(db, user_id, jar_name.lower().replace(' ', '_'))
                 if not jar:
                     return {
                         "agent": "jar_manager",

@@ -44,13 +44,13 @@ class FeeManager:
         )
         
         # Create service container for dependency injection
-        if db and user_id:
-            self.services = FeeServiceContainer(db, user_id)
-            self.tools = get_all_fee_tools(self.services)
-        else:
+        if db is None and user_id is None:
             # Fallback for cases without database context (testing/development)
             self.services = None
             self.tools = []  # Empty tools list for non-production use
+        else:
+            self.services = FeeServiceContainer(db, user_id)
+            self.tools = get_all_fee_tools(self.services)
             
         self.llm_with_tools = self.llm.bind_tools(self.tools)
 
@@ -66,7 +66,7 @@ class FeeManager:
             Tuple of (tool_result, tool_calls_made, requires_follow_up)
         """
         # Validate that agent is properly configured for production use
-        if not self.services or not self.db or not self.user_id:
+        if self.services is None or self.db is None or self.user_id is None:
             return (
                 "❌ Error: Fee agent not properly configured. Database and user context required.",
                 [],
@@ -95,8 +95,7 @@ class FeeManager:
             ])
 
             if not response.tool_calls:
-                if config.debug_mode:
-                    print("🤖 Agent failed to call a tool.")
+                print("🤖 Agent failed to call a tool.")
                 return "Error: No action was taken.", [], False
 
             # Execute the chosen tool
@@ -111,11 +110,8 @@ class FeeManager:
             for tool in self.tools:
                 if tool.name == tool_name:
                     tool_calls_made.append(f"{tool_name}(args={tool_args})")
-                    if inspect.iscoroutinefunction(tool.func):
-                        result = await tool.ainvoke(tool_args)
-                    else:
-                        result = tool.invoke(tool_args)
-                    
+                    result = await tool.ainvoke(tool_args)
+
                     # If clarification needed, return result and set follow-up flag
                     if tool_name == "request_clarification":
                         return result, tool_calls_made, True
@@ -126,8 +122,7 @@ class FeeManager:
             return f"Error: Tool {tool_name} not found.", tool_calls_made, False
 
         except Exception as e:
-            if config.debug_mode:
-                traceback.print_exc()
+            traceback.print_exc()
             return f"Error: {str(e)}", tool_calls_made, False
 
 async def process_task(task: str, db: AsyncIOMotorDatabase = None, user_id: str = None, conversation_history: Optional[List[ConversationTurnInDB]] = None) -> Dict[str, Any]:
@@ -144,7 +139,7 @@ async def process_task(task: str, db: AsyncIOMotorDatabase = None, user_id: str 
         Dict containing response and metadata
     """
     # Validate required parameters for production use
-    if not db or not user_id:
+    if db is None or user_id is None:
         return {
             "response": "❌ Error: Database connection and user_id are required for fee agent.",
             "requires_follow_up": False,

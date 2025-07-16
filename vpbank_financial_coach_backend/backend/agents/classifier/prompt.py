@@ -18,7 +18,7 @@ parent_dir = os.path.dirname(os.path.dirname(current_dir))
 sys.path.append(parent_dir)
 
 from backend.models.conversation import ConversationTurnInDB
-from backend.utils.db_utils import get_all_jars_for_user
+from backend.utils.general_utils import get_all_jars_for_user
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 async def build_react_classifier_prompt(user_query: str, conversation_history: List[ConversationTurnInDB], 

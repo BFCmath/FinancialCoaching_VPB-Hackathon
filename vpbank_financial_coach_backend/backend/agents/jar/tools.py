@@ -70,8 +70,8 @@ def get_all_jar_tools(services: JarServiceContainer) -> List[tool]:
         Note: For each jar, provide either percent OR amount, not both.
         All lists must have the same length.
         """
-        jar_service = JarManagementService(services.db, services.user_id)
-        return await jar_service.create_jar(
+        return await JarManagementService.create_jar(
+            services.db, services.user_id,
             name=name,
             description=description,
             percent=percent,
@@ -101,8 +101,8 @@ def get_all_jar_tools(services: JarServiceContainer) -> List[tool]:
         Note: All lists must have the same length as jar_name.
         For each jar, provide either new_percent OR new_amount, not both.
         """
-        jar_service = JarManagementService(services.db, services.user_id)
-        return await jar_service.update_jar(
+        return await JarManagementService.update_jar(
+            services.db, services.user_id,
             jar_name=jar_name,
             new_name=new_name,
             new_description=new_description,
@@ -119,14 +119,12 @@ def get_all_jar_tools(services: JarServiceContainer) -> List[tool]:
             jar_name: List of jar names to delete
             reason: Reason for deletion
         """
-        jar_service = JarManagementService(services.db, services.user_id)
-        return await jar_service.delete_jar(jar_name=jar_name, reason=reason)
+        return await JarManagementService.delete_jar(services.db, services.user_id, jar_name=jar_name, reason=reason)
 
     @tool
     async def list_jars() -> str:
         """List all budget jars with their current balances, budgets, and percentages."""
-        jar_service = JarManagementService(services.db, services.user_id)
-        return await jar_service.list_jars()
+        return await JarManagementService.list_jars(services.db, services.user_id)
 
     @tool
     async def request_clarification(question: str, suggestions: Optional[str] = None) -> str:

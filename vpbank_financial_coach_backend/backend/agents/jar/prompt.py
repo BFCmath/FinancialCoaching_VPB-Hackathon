@@ -17,7 +17,7 @@ sys.path.append(parent_dir)
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from backend.models.conversation import ConversationTurnInDB
-from backend.utils.db_utils import get_all_jars_for_user, get_user_settings
+from backend.utils.general_utils import get_all_jars_for_user, get_user_settings
 
 async def build_jar_manager_prompt(
     user_input: str,

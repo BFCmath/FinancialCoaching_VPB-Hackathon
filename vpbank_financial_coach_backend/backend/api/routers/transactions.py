@@ -37,12 +37,8 @@ async def create_new_transaction(
     # Create the transaction in the database
     saved_transaction = await transaction_utils.create_transaction_in_db(db, transaction_dict_to_save)
 
-    # Update the jar's current balance by subtracting the transaction amount
-    try:
-        await jar_utils.subtract_money_from_jar(db, user_id, transaction_in.jar, transaction_in.amount)
-    except ValueError:
-        # If jar doesn't have enough money, allow the transaction but jar goes negative
-        await jar_utils.add_money_to_jar(db, user_id, transaction_in.jar, -transaction_in.amount)
+    # Update the jar's current balance by adding the transaction amount (spent money)
+    await jar_utils.add_money_to_jar(db, user_id, transaction_in.jar, transaction_in.amount)
 
     return saved_transaction
 
@@ -101,6 +97,7 @@ async def delete_transaction(
     # Get transaction first to refund the jar
     transaction = await transaction_utils.get_transaction_by_id(db, user_id, transaction_id)
     if not transaction:
+        print(f"Transaction {transaction_id} not found for user {user_id}.")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Transaction '{transaction_id}' not found."
@@ -110,13 +107,14 @@ async def delete_transaction(
     deleted = await transaction_utils.delete_transaction_by_id(db, user_id, transaction_id)
     
     if not deleted:
+        print(f"Failed to delete transaction {transaction_id} for user {user_id}.")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Transaction '{transaction_id}' not found."
         )
     
-    # Refund the amount back to the jar
-    await jar_utils.add_money_to_jar(db, user_id, transaction.jar, transaction.amount)
+    # Remove the spent amount from the jar (since transaction is being deleted)
+    await jar_utils.subtract_money_from_jar(db, user_id, transaction.jar, transaction.amount)
     
     return
 

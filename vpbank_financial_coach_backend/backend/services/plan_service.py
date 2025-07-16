@@ -15,7 +15,7 @@ from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 # Import database utilities and models
-from backend.utils import db_utils
+from backend.utils import general_utils
 from backend.models.plan import BudgetPlanInDB, BudgetPlanCreate, BudgetPlanUpdate
 from .confidence_service import ConfidenceService
 
@@ -27,17 +27,17 @@ class PlanManagementService:
     @staticmethod
     async def save_budget_plan(db: AsyncIOMotorDatabase, user_id: str, plan_data: BudgetPlanCreate) -> BudgetPlanInDB:
         """Save budget plan to database."""
-        return await db_utils.create_plan_in_db(db, user_id, plan_data)
+        return await general_utils.create_plan_in_db(db, user_id, plan_data)
     
     @staticmethod
     async def get_budget_plan(db: AsyncIOMotorDatabase, user_id: str, plan_name: str) -> Optional[BudgetPlanInDB]:
         """Get budget plan by name."""
-        return await db_utils.get_plan_by_name(db, user_id, plan_name)
+        return await general_utils.get_plan_by_name(db, user_id, plan_name)
     
     @staticmethod
     async def get_all_budget_plans(db: AsyncIOMotorDatabase, user_id: str) -> List[BudgetPlanInDB]:
         """Get all budget plans."""
-        return await db_utils.get_all_plans_for_user(db, user_id)
+        return await general_utils.get_all_plans_for_user(db, user_id)
     
     @staticmethod
     async def get_budget_plans_by_status(db: AsyncIOMotorDatabase, user_id: str, status: str) -> List[BudgetPlanInDB]:
@@ -48,7 +48,7 @@ class PlanManagementService:
     @staticmethod
     async def delete_budget_plan(db: AsyncIOMotorDatabase, user_id: str, plan_name: str) -> bool:
         """Delete budget plan from database."""
-        return await db_utils.delete_plan_by_name(db, user_id, plan_name)
+        return await general_utils.delete_plan_by_name(db, user_id, plan_name)
     
     @staticmethod
     async def create_plan(db: AsyncIOMotorDatabase, user_id: str, name: str, description: str, 
@@ -101,7 +101,7 @@ class PlanManagementService:
             changes.append("jar recommendations updated")
         
         if changes:
-            await db_utils.update_plan_in_db(db, user_id, name, update_data)
+            await general_utils.update_plan_in_db(db, user_id, name, update_data)
         
         result = f"Updated plan '{name}': {', '.join(changes) if changes else 'no changes'}"
         return ConfidenceService.format_confidence_response(result, confidence)

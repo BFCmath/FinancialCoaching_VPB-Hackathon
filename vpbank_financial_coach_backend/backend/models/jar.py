@@ -39,8 +39,8 @@ class JarInDB(JarBase):
     amount: float = Field(..., ge=0, example=2750.00, description="The budget allocation as a dollar amount.")
 
     # Current state fields, which will be updated by transactions
-    current_percent: float = Field(default=0.0, ge=0, example=0.33, description="The current balance as a percentage: current_amount / amount.")
-    current_amount: float = Field(default=0.0, ge=0, example=1650.00, description="The current balance as a dollar amount.")
+    current_percent: float = Field(default=0.0, ge=0, example=0.33, description="The current balance SPENT as a percentage: current_amount / amount. Can be over 100%")
+    current_amount: float = Field(default=0.0, ge=0,example=1650.00, description="The current balance SPENT as a dollar amount.")
 
     class Config:
         orm_mode = True

@@ -19,7 +19,7 @@ from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 # Import database utilities and models
-from backend.utils import db_utils
+from backend.utils import general_utils
 from backend.models.conversation import ConversationTurnInDB, ConversationTurnCreate
 from backend.core.config import settings  # For MAX_MEMORY_TURNS
 
@@ -35,7 +35,7 @@ class ConversationService:
     async def add_conversation_turn(self, turn_data: ConversationTurnCreate) -> None:
         """Add conversation turn using a Pydantic model."""
         # The db_utils function already expects the model, so this is now very clean.
-        await db_utils.add_conversation_turn_for_user(self.db, self.user_id, turn_data)
+        await general_utils.add_conversation_turn_for_user(self.db, self.user_id, turn_data)
     
     async def add_conversation_turn_detail(self, user_input: str, agent_output: str, 
                                     agent_list: Optional[List[str]] = None, 
@@ -51,12 +51,12 @@ class ConversationService:
             tool_call_list=tool_call_list
         )
         
-        await db_utils.add_conversation_turn_for_user(self.db, self.user_id, turn_data)
+        await general_utils.add_conversation_turn_for_user(self.db, self.user_id, turn_data)
     
     async def get_conversation_history(self, limit: Optional[int] = None) -> List[ConversationTurnInDB]:
         """Get recent conversation history."""
         # This now needs the ObjectId to string conversion fix as well
-        history_docs = await db_utils.get_conversation_history_for_user(self.db, self.user_id, limit=limit)
+        history_docs = await general_utils.get_conversation_history_for_user(self.db, self.user_id, limit=limit)
         return history_docs
     
     async def get_agent_specific_history(self, agent_name: str, max_turns: int = 10) -> List[ConversationTurnInDB]:
@@ -95,15 +95,15 @@ class ConversationService:
     
     async def check_conversation_lock(self) -> Optional[str]:
         """Check if conversation is locked to a specific agent."""
-        return await db_utils.get_agent_lock_for_user(self.db, self.user_id)
+        return await general_utils.get_agent_lock_for_user(self.db, self.user_id)
     
     async def lock_conversation_to_agent(self, agent_name: str) -> None:
         """Lock conversation to specific agent for multi-turn interaction."""
-        await db_utils.set_agent_lock_for_user(self.db, self.user_id, agent_name)
+        await general_utils.set_agent_lock_for_user(self.db, self.user_id, agent_name)
     
     async def release_conversation_lock(self) -> None:
         """Release conversation lock to allow orchestrator routing."""
-        await db_utils.set_agent_lock_for_user(self.db, self.user_id, None)
+        await general_utils.set_agent_lock_for_user(self.db, self.user_id, None)
     
     # =============================================================================
     # STAGE MANAGEMENT UTILITIES FOR PLAN AGENT
