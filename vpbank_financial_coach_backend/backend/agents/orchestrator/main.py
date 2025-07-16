@@ -140,7 +140,7 @@ async def process_task_async(task: str, user_id: str, db: AsyncIOMotorDatabase) 
         
     except ValueError as e:
         # Handle validation errors - create error conversation turn
-        error_response = f"Invalid request: {str(e)}"
+        error_response = f"Error: {str(e)}"
         return await ConversationService.add_conversation_turn(
             db=db,
             user_id=user_id or "unknown",
@@ -148,12 +148,13 @@ async def process_task_async(task: str, user_id: str, db: AsyncIOMotorDatabase) 
             agent_output=error_response,
             agent_list=['orchestrator'],
             tool_call_list=[]
+            
         )
         
     except Exception as e:
         # Handle unexpected errors - create error conversation turn  
         traceback.print_exc()
-        error_response = f"An unexpected error occurred: {str(e)}"
+        error_response = f"Error: {str(e)}"
         
         return await ConversationService.add_conversation_turn(
             db=db,
