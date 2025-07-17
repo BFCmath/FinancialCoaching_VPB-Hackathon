@@ -80,28 +80,88 @@ pip install -r requirements.txt
 
 # Setup environment variables
 cp .env.example .env
-# Edit .env with your MongoDB connection and JWT secret
+# Edit .env with your MongoDB connection, JWT secret, and Google API keys
 ```
 
-### 2. Database Setup
+### 2. Environment Configuration
+
+Configure your `.env` file with required and optional settings:
+
+```bash
+# Required Configuration
+MONGO_URL="mongodb://localhost:27017"
+DATABASE_NAME="vpbank_dev"
+JWT_SECRET_KEY="your_super_strong_randomly_generated_secret_key"
+GOOGLE_API_KEY="your_google_gemini_api_key"
+
+# Optional: Agent-specific API keys (for better resource management)
+CLASSIFIER_GOOGLE_API_KEY="optional_classifier_key"
+JAR_GOOGLE_API_KEY="optional_jar_key" 
+FEE_GOOGLE_API_KEY="optional_fee_key"
+PLAN_GOOGLE_API_KEY="optional_plan_key"
+FETCHER_GOOGLE_API_KEY="optional_fetcher_key"
+KNOWLEDGE_GOOGLE_API_KEY="optional_knowledge_key"
+ORCHESTRATOR_GOOGLE_API_KEY="optional_orchestrator_key"
+
+# Shared Agent Configuration (used by all agents)
+MODEL_NAME="gemini-2.5-flash-lite-preview-06-17"
+LLM_TEMPERATURE="0.1"
+DEBUG_MODE="true"
+VERBOSE_LOGGING="true"
+MAX_REACT_ITERATIONS="5"
+MAX_MEMORY_TURNS="10"
+```
+
+### 3. Database Setup
 
 ```bash
 # Start MongoDB (locally or use MongoDB Atlas)
-# Update MONGODB_URL in .env file
+# For local MongoDB:
+mongod --dbpath /path/to/your/db
+
+# Or use MongoDB Atlas cloud service
+# Update MONGO_URL in .env file with your connection string
 ```
 
-### 3. Run the Application
+### 4. Run the Application
 
 ```bash
-# Start the FastAPI server
+# Start the FastAPI development server
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+
+# Alternative: Run with Python module
+python -m backend.main
+
+# For production (using Gunicorn)
+pip install gunicorn
+gunicorn backend.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 ```
 
-### 4. Access the API
+### 5. Verify Installation
 
-- **API Documentation**: http://localhost:8000/docs
-- **Alternative Docs**: http://localhost:8000/redoc  
-- **Health Check**: http://localhost:8000/
+Open your browser and navigate to:
+
+- **API Documentation**: <http://localhost:8000/docs>
+- **Alternative Docs**: <http://localhost:8000/redoc>
+- **Health Check**: <http://localhost:8000/>
+
+You should see the FastAPI interactive documentation and a successful health check.
+
+### 6. Test the API
+
+Use the included testing tools:
+
+```bash
+# Run comprehensive test suite (53 tests, 94.3% success rate)
+cd frontend
+python fully_test.py
+
+# Or test interactively with chat simulator
+python chat_simulator.py
+
+# Or run focused API tests
+python mock.py
+```
 
 ## 📖 API Endpoints
 
