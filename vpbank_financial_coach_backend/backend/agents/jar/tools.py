@@ -55,7 +55,6 @@ def get_all_jar_tools(services: JarServiceContainer) -> List[tool]:
         description: List[str],
         percent: List[Optional[float]] = None,
         amount: List[Optional[float]] = None,
-        confidence: int = 85
     ) -> str:
         """
         Create one or multiple budget jars with percentage or amount. Supports multi-jar creation.
@@ -65,7 +64,6 @@ def get_all_jar_tools(services: JarServiceContainer) -> List[tool]:
             description: Must be informative 
             percent: List of target percentage allocations (0.0-1.0, e.g., [0.15, 0.20])
             amount: List of target dollar amounts (will calculate percentages automatically)
-            confidence: LLM confidence in operation understanding (0-100)
         
         Note: For each jar, provide either percent OR amount, not both.
         All lists must have the same length.
@@ -76,8 +74,7 @@ def get_all_jar_tools(services: JarServiceContainer) -> List[tool]:
                 name=name,
                 description=description,
                 percent=percent,
-                amount=amount,
-                confidence=confidence
+                amount=amount
             )
         except ValueError as e:
             # Service validation errors
@@ -93,7 +90,6 @@ def get_all_jar_tools(services: JarServiceContainer) -> List[tool]:
         new_description: List[Optional[str]] = None,
         new_percent: List[Optional[float]] = None,
         new_amount: List[Optional[float]] = None,
-        confidence: int = 85
     ) -> str:
         """Update one or multiple existing jars with new parameters and rebalance percentages if needed.
         
@@ -103,7 +99,6 @@ def get_all_jar_tools(services: JarServiceContainer) -> List[tool]:
             new_description: List of new descriptions (optional for each)
             new_percent: List of new percentage allocations (0.0-1.0, optional for each)
             new_amount: List of new dollar amounts (will calculate percentages, optional for each)
-            confidence: LLM confidence (0-100)
         
         Note: All lists must have the same length as jar_name.
         For each jar, provide either new_percent OR new_amount, not both.
@@ -116,7 +111,6 @@ def get_all_jar_tools(services: JarServiceContainer) -> List[tool]:
                 new_description=new_description,
                 new_percent=new_percent,
                 new_amount=new_amount,
-                confidence=confidence
             )
         except ValueError as e:
             # Service validation errors

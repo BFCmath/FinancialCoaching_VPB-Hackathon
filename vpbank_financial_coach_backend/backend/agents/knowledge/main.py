@@ -18,7 +18,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from .tools import get_all_knowledge_tools, KnowledgeServiceContainer
 from .prompt import build_react_prompt
-from .config import config
+from backend.core.config import settings
 
 
 class KnowledgeBaseAgent:
@@ -43,9 +43,9 @@ class KnowledgeBaseAgent:
         
         # Initialize LLM
         self.llm = ChatGoogleGenerativeAI(
-            model=config.model_name,
-            google_api_key=config.google_api_key,
-            temperature=config.llm_temperature
+            model=settings.MODEL_NAME,
+            google_api_key=settings.GOOGLE_API_KEY,
+            temperature=settings.LLM_TEMPERATURE
         )
         
         # Create service container with user context
@@ -94,25 +94,25 @@ class KnowledgeBaseAgent:
                 HumanMessage(content=task)
             ]
             
-            if config.debug_mode:
+            if settings.DEBUG_MODE:
                 print(f"🔍 Processing query: {task}")
                 print(f"🧠 System prompt length: {len(system_prompt)} chars")
             
             # ReAct Loop: Continue until respond() is called
-            max_iterations = config.max_react_iterations
+            max_iterations = settings.MAX_REACT_ITERATIONS  
             iteration = 0
             
             while iteration < max_iterations:
                 iteration += 1
-                
-                if config.debug_mode:
+
+                if settings.DEBUG_MODE:
                     print(f"\n🔄 ReAct Iteration {iteration}/{max_iterations}")
                     print("=" * 40)
                 
                 # Get LLM response with tools
                 response = await self.llm_with_tools.ainvoke(messages)
-                
-                if config.debug_mode:
+
+                if settings.DEBUG_MODE:
                     print(f"🤖 LLM Response Type: {type(response)}")
                     if hasattr(response, 'content') and response.content:
                         print(f"💭 LLM Thinking: {response.content[:100]}...")
@@ -124,16 +124,16 @@ class KnowledgeBaseAgent:
                 
                 # Process tool calls if any
                 if hasattr(response, 'tool_calls') and response.tool_calls:
-                    
-                    if config.debug_mode:
+
+                    if settings.DEBUG_MODE:
                         print(f"\n🔧 Processing {len(response.tool_calls)} tool call(s):")
                     
                     for i, tool_call in enumerate(response.tool_calls, 1):
                         tool_name = tool_call['name']
                         tool_args = tool_call.get('args', {})
                         tool_call_id = tool_call.get('id', f'call_{i}')
-                        
-                        if config.debug_mode:
+
+                        if settings.DEBUG_MODE:
                             print(f"\n📞 Call {i}: {tool_name}()")
                             print(f"📋 Parameters: {tool_args}")
                         
@@ -152,7 +152,7 @@ class KnowledgeBaseAgent:
                                 # Special handling for respond() tool - THIS IS THE KEY FIX
                                 if tool_name == "respond" and isinstance(result, dict):
                                     final_answer = result.get("data", {}).get("final_answer", "")
-                                    if config.debug_mode:
+                                    if settings.DEBUG_MODE:
                                         print(f"✅ Final answer received: {final_answer[:100]}...")
                                         print(f"🏁 ReAct completed in {iteration} iterations")
                                     return final_answer
@@ -162,8 +162,8 @@ class KnowledgeBaseAgent:
                                     content=str(result),
                                     tool_call_id=tool_call_id
                                 ))
-                                
-                                if config.debug_mode:
+
+                                if settings.DEBUG_MODE:
                                     print(f"✅ Tool result: {str(result)[:150]}...")
                                     
                             except Exception as e:

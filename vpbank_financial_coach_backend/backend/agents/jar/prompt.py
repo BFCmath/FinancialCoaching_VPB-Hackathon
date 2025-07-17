@@ -17,15 +17,15 @@ sys.path.append(parent_dir)
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from backend.models.conversation import ConversationTurnInDB
-from backend.utils.jar_utils import get_all_jars_for_user
-from backend.utils.user_setting_utils import get_user_settings
+from backend.services.jar_service import JarManagementService
+from backend.services.communication_service import AgentCommunicationService
 
 async def build_jar_manager_prompt(
     user_input: str,
     conversation_history: List[ConversationTurnInDB],
     db: AsyncIOMotorDatabase,
     user_id: str,
-    is_follow_up: bool = False
+    limit_conversation: int = 3
 ) -> str:
     """
     Build complete prompt for LLM multi-jar management with backend database integration.
@@ -42,10 +42,10 @@ async def build_jar_manager_prompt(
     """
     
     # Fetch fresh data from backend database (following classifier pattern)
-    existing_jars = await get_all_jars_for_user(db, user_id)
-    user_settings_obj = await get_user_settings(db, user_id)
-    total_income = user_settings_obj.total_income # Default fallback
-    
+    existing_jars = await JarManagementService.get_all_jars_for_user(db, user_id)
+    user_income = await AgentCommunicationService.get_user_total_income(db, user_id)
+    total_income = user_income
+
     # Format existing jars with enhanced display
     jars_info = ""
     if existing_jars:
@@ -68,9 +68,9 @@ TARGET AMOUNT: ${budget_amount:.2f}
     
     # Format conversation history for context (following classifier pattern)
     context = ""
-    if is_follow_up and conversation_history:
+    if conversation_history:
         # Get the last few relevant turns
-        relevant_history = [turn for turn in conversation_history[-3:] 
+        relevant_history = [turn for turn in reversed(conversation_history[:limit_conversation]) 
                           if 'jar' in turn.agent_list]
         if relevant_history:
             history_lines = []
@@ -78,7 +78,8 @@ TARGET AMOUNT: ${budget_amount:.2f}
                 history_lines.append(f"User: {turn.user_input}")
                 history_lines.append(f"Assistant: {turn.agent_output}")
             context = "\nPREVIOUS CONVERSATION:\n" + "\n".join(history_lines)
-
+    if len(context) == 0:
+        context = "No previous conversation history available."
     # Build complete prompt with multi-jar capabilities following classifier pattern
     prompt = f"""You are an advanced multi-jar budget manager implementing T. Harv Eker's proven 6-jar money management system. Analyze the user's input and take appropriate action using multi-jar operations.
 
@@ -106,9 +107,8 @@ Think step by step about what the user wants:
 2. Determine operation type (create/update/delete/list)
 3. Extract amounts/percentages and convert to proper format
 4. Use appropriate List inputs with matching lengths
-5. Call the appropriate tool with proper confidence scoring
-6. Expect automatic rebalancing for create/update/delete operations
-7. Support Vietnamese language
+5. Expect automatic rebalancing for create/update/delete operations
+6. You MUST NOT ask the user for clarification in your direct response. If you need to ask a question, you MUST use the `request_clarification` tool.
 
 CURRENT JAR SYSTEM (Total Income: ${total_income:,.2f}):
 {jars_info}

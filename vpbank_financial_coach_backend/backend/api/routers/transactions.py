@@ -63,61 +63,6 @@ async def list_transactions(
     # Apply limit
     return transactions[:limit]
 
-@router.get("/{transaction_id}", response_model=transaction_model.TransactionInDB)
-async def get_transaction(
-    transaction_id: str,
-    db: AsyncIOMotorDatabase = Depends(deps.get_db),
-    current_user: user_model.UserInDB = Depends(deps.get_current_user)
-):
-    """
-    Get a specific transaction by its ID.
-    """
-    user_id = str(current_user.id)
-    transaction = await transaction_utils.get_transaction_by_id(db, user_id, transaction_id)
-    
-    if not transaction:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Transaction '{transaction_id}' not found."
-        )
-    
-    return transaction
-
-@router.delete("/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_transaction(
-    transaction_id: str,
-    db: AsyncIOMotorDatabase = Depends(deps.get_db),
-    current_user: user_model.UserInDB = Depends(deps.get_current_user)
-):
-    """
-    Delete a transaction by its ID and refund the amount to the jar.
-    """
-    user_id = str(current_user.id)
-    
-    # Get transaction first to refund the jar
-    transaction = await transaction_utils.get_transaction_by_id(db, user_id, transaction_id)
-    if not transaction:
-        print(f"Transaction {transaction_id} not found for user {user_id}.")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Transaction '{transaction_id}' not found."
-        )
-    
-    # Delete the transaction
-    deleted = await transaction_utils.delete_transaction_by_id(db, user_id, transaction_id)
-    
-    if not deleted:
-        print(f"Failed to delete transaction {transaction_id} for user {user_id}.")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Transaction '{transaction_id}' not found."
-        )
-    
-    # Remove the spent amount from the jar (since transaction is being deleted)
-    await jar_utils.subtract_money_from_jar(db, user_id, transaction.jar, transaction.amount)
-    
-    return
-
 @router.get("/by-source/{source}", response_model=List[transaction_model.TransactionInDB])
 async def get_transactions_by_source(
     source: transaction_model.TransactionSource,
@@ -181,3 +126,59 @@ async def get_transactions_by_date_range(
         db, user_id, start_date, end_date
     )
     return transactions
+
+
+@router.get("/{transaction_id}", response_model=transaction_model.TransactionInDB)
+async def get_transaction(
+    transaction_id: str,
+    db: AsyncIOMotorDatabase = Depends(deps.get_db),
+    current_user: user_model.UserInDB = Depends(deps.get_current_user)
+):
+    """
+    Get a specific transaction by its ID.
+    """
+    user_id = str(current_user.id)
+    transaction = await transaction_utils.get_transaction_by_id(db, user_id, transaction_id)
+    
+    if not transaction:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transaction '{transaction_id}' not found."
+        )
+    
+    return transaction
+
+@router.delete("/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_transaction(
+    transaction_id: str,
+    db: AsyncIOMotorDatabase = Depends(deps.get_db),
+    current_user: user_model.UserInDB = Depends(deps.get_current_user)
+):
+    """
+    Delete a transaction by its ID and refund the amount to the jar.
+    """
+    user_id = str(current_user.id)
+    
+    # Get transaction first to refund the jar
+    transaction = await transaction_utils.get_transaction_by_id(db, user_id, transaction_id)
+    if not transaction:
+        print(f"Transaction {transaction_id} not found for user {user_id}.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transaction '{transaction_id}' not found."
+        )
+    
+    # Delete the transaction
+    deleted = await transaction_utils.delete_transaction_by_id(db, user_id, transaction_id)
+    
+    if not deleted:
+        print(f"Failed to delete transaction {transaction_id} for user {user_id}.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transaction '{transaction_id}' not found."
+        )
+    
+    # Remove the spent amount from the jar (since transaction is being deleted)
+    await jar_utils.subtract_money_from_jar(db, user_id, transaction.jar, transaction.amount)
+    
+    return

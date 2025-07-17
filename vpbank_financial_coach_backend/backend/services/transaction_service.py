@@ -109,7 +109,6 @@ class TransactionService:
     @staticmethod
     async def add_money_to_jar(db: AsyncIOMotorDatabase, user_id: str,
                                             amount: float, jar_name: str, source: str) -> str:
-        """Add money to jar with confidence-based formatting."""
         if user_id is None or not user_id.strip():
             raise ValueError("User ID cannot be empty")
         if db is None:
@@ -182,7 +181,10 @@ class TransactionQueryService:
     """
     Advanced transaction querying service.
     """
-    
+    @staticmethod
+    async def format_dict_to_string(data: Dict[str, Any], description) -> str:
+        """Format dictionary to string for better readability."""
+        return 
     @staticmethod
     async def get_jar_transactions(db: AsyncIOMotorDatabase, user_id: str, jar_name: Optional[str] = None, 
                                    limit: int = 50, description: str = "") -> Dict[str, Any]:
@@ -199,22 +201,28 @@ class TransactionQueryService:
     @staticmethod
     async def get_time_period_transactions(db: AsyncIOMotorDatabase, user_id: str, jar_name: Optional[str] = None, 
                                            start_date: str = "last_month", end_date: Optional[str] = None, 
-                                           limit: int = 50, description: str = "") -> Dict[str, Any]:
+                                           limit: int = 50, description: str = "") -> str:
         """Get transactions within date range."""
-        if jar_name:
-            transactions = await TransactionService.get_transactions_by_jar(db, user_id, jar_name)
-        else:
-            transactions = await TransactionService.get_all_transactions(db, user_id)
-        
-        start_parsed = TransactionQueryService._parse_flexible_date(start_date)
-        end_parsed = TransactionQueryService._parse_flexible_date(end_date) if end_date else datetime.now().date()
-        
-        filtered = [t for t in transactions if start_parsed <= datetime.strptime(t.date, "%Y-%m-%d").date() <= end_parsed][:limit]
-        transaction_dicts = [t.dict() for t in filtered]
-        
-        auto_desc = description or (f"{jar_name} transactions from {start_date} to {end_date or 'now'}" if jar_name else f"all transactions from {start_date} to {end_date or 'now'}")
-        return {"data": transaction_dicts, "description": f"retrieved {len(transaction_dicts)} {auto_desc}"}
-    
+        try:
+            if jar_name:
+                transactions = await TransactionService.get_transactions_by_jar(db, user_id, jar_name)
+            else:
+                transactions = await TransactionService.get_all_transactions(db, user_id)
+            start_parsed = TransactionQueryService._parse_flexible_date(start_date)
+            end_parsed = TransactionQueryService._parse_flexible_date(end_date) if end_date else datetime.now().date()
+            filtered = [t for t in transactions if start_parsed <= datetime.strptime(t.date, "%Y-%m-%d").date() <= end_parsed][:limit]
+            transaction_dicts = [t.dict() for t in filtered]
+            auto_desc = description or (f"{jar_name} transactions from {start_date} to {end_date or 'now'}" if jar_name else f"all transactions from {start_date} to {end_date or 'now'}")
+            if(len(transaction_dicts) == 0):
+                return f"No transactions found for {auto_desc}"
+            else:
+                result = f"retrieved {len(transaction_dicts)} {auto_desc}"
+                result += f"\nTransactions: {str(transaction_dicts)}"
+            return result
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            raise ValueError(f"Error retrieving transactions: {str(e)}")
     @staticmethod
     async def get_amount_range_transactions(db: AsyncIOMotorDatabase, user_id: str, jar_name: Optional[str] = None, 
                                             min_amount: float = None, max_amount: float = None, limit: int = 50, 

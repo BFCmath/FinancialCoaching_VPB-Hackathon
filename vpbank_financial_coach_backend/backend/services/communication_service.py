@@ -13,7 +13,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from backend.utils import general_utils
+from backend.utils import general_utils, user_setting_utils
 from .transaction_service import TransactionQueryService
 from .jar_service import JarManagementService
 
@@ -218,3 +218,14 @@ class AgentCommunicationService:
                 "error": str(e),
                 "timestamp": datetime.utcnow().isoformat()
             }
+    @staticmethod
+    async def get_user_total_income(db: AsyncIOMotorDatabase, user_id: str) -> Dict[str, Any]:
+        if not user_id or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+
+        user_income = await user_setting_utils.get_user_total_income(db, user_id)
+        if user_income is None:
+            raise ValueError(f"No income data found for user {user_id}")
+        return user_income

@@ -17,7 +17,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from .config import config
+from backend.core.config import settings
 from .tools import get_all_classifier_tools, ClassifierServiceContainer
 from .prompt import build_react_classifier_prompt
 from backend.models.conversation import ConversationTurnInDB
@@ -37,9 +37,9 @@ class ReActClassifierAgent:
         self.db = db
         self.user_id = user_id
         self.llm = ChatGoogleGenerativeAI(
-            model=config.model_name,
-            google_api_key=config.google_api_key,
-            temperature=config.temperature
+            model=settings.MODEL_NAME,
+            google_api_key=settings.GOOGLE_API_KEY,
+            temperature=settings.LLM_TEMPERATURE
         )
         
         # Create service container for dependency injection
@@ -116,13 +116,13 @@ Assistant:
                 HumanMessage(content=user_query)
             ]
 
-            if config.debug_mode:
+            if settings.DEBUG_MODE:
                 print(f"🔍 Processing query: {user_query}")
                 print(f"🧠 System prompt length: {len(system_prompt)} chars")
 
-            for iteration in range(config.max_react_iterations):
-                if config.debug_mode:
-                    print(f"🔄 ReAct Iteration {iteration + 1}/{config.max_react_iterations}")
+            for iteration in range(settings.MAX_REACT_ITERATIONS):
+                if settings.DEBUG_MODE:
+                    print(f"🔄 ReAct Iteration {iteration + 1}/{settings.MAX_REACT_ITERATIONS}")
 
                 try:
                     response = await self.llm_with_tools.ainvoke(messages)
@@ -132,7 +132,7 @@ Assistant:
                     return final_response, tool_calls_made, False
 
                 if not response.tool_calls:
-                    if config.debug_mode:
+                    if settings.DEBUG_MODE:
                         print("🤖 Agent failed to call a tool. Returning error.")
                     final_response = "❌ Error: The agent did not select a tool to respond."
                     return final_response, tool_calls_made, False
@@ -144,7 +144,7 @@ Assistant:
 
                     tool_calls_made.append(f"{tool_name}(args={tool_args})")
 
-                    if config.debug_mode:
+                    if settings.DEBUG_MODE:
                         print(f"📞 Calling Tool: {tool_name} with args: {tool_args}")
 
                     tool_func = self._find_tool(tool_name)
@@ -158,7 +158,7 @@ Assistant:
                         
                         # If "respond" for clarification, set follow-up
                         if tool_name == "respond":
-                            if config.debug_mode:
+                            if settings.DEBUG_MODE:
                                 print(f"🔒 ReAct loop paused by '{tool_name}' for user input.")
                             requires_follow_up = True
                             final_response = str(result)
@@ -166,7 +166,7 @@ Assistant:
 
                         # If final classification tool, end without follow-up
                         if tool_name in ["add_money_to_jar", "report_no_suitable_jar"]:
-                            if config.debug_mode:
+                            if settings.DEBUG_MODE:
                                 print(f"🏁 ReAct loop finished by final action tool: '{tool_name}'.")
                             final_response = str(result)
                             return final_response, tool_calls_made, False
@@ -177,14 +177,14 @@ Assistant:
                     except Exception as e:
                         error_msg = f"❌ Tool {tool_name} failed: {str(e)}"
                         messages.append(ToolMessage(content=error_msg, tool_call_id=tool_call_id))
-                        if config.debug_mode:
+                        if settings.DEBUG_MODE:
                             print(error_msg)
 
             final_response = "❌ Classifier could not provide a complete answer within the allowed steps."
             return final_response, tool_calls_made, False
 
         except Exception as e:
-            if config.debug_mode:
+            if settings.DEBUG_MODE:
                 import traceback
                 traceback.print_exc()
             final_response = f"❌ An error occurred during processing: {str(e)}"
@@ -229,7 +229,7 @@ async def process_task_async(task: str, conversation_history: List[ConversationT
         # Process the request
         final_response, tool_calls_made, requires_follow_up = await agent.process_request(task, conversation_history)
 
-        if config.verbose_logging:
+        if settings.VERBOSE_LOGGING:
             print(f"📝 Classifier agent completed. Follow-up: {requires_follow_up}")
 
         return {
@@ -251,7 +251,7 @@ async def process_task_async(task: str, conversation_history: List[ConversationT
     except Exception as e:
         # Handle any unexpected errors
         import traceback
-        if config.debug_mode:
+        if settings.DEBUG_MODE:
             traceback.print_exc()
         
         return {

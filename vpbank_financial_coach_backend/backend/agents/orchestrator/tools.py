@@ -14,13 +14,14 @@ from backend.agents.knowledge.interface import KnowledgeInterface
 from backend.agents.plan.interface import BudgetAdvisorInterface
 from backend.agents.transaction_fetcher.interface import TransactionFetcherInterface
 from backend.agents.base_worker import BaseWorkerInterface
+from backend.models.conversation import ConversationTurnInDB
 
 class OrchestratorServiceContainer:
     """
     Request-scoped service container for the orchestrator agent.
     Provides direct access to other agent interfaces.
     """
-    def __init__(self, db: AsyncIOMotorDatabase, user_id: str, conversation_history: List):
+    def __init__(self, db: AsyncIOMotorDatabase, user_id: str, conversation_history: List[ConversationTurnInDB] = None):
         self.db = db
         self.user_id = user_id
         self.conversation_history = conversation_history
@@ -43,6 +44,7 @@ class OrchestratorServiceContainer:
                 return {
                     "response": "Error: Task description cannot be empty",
                     "agent_lock": None,
+                    "agent_list": [],
                     "tool_calls": [],
                     "error": True
                 }
@@ -60,10 +62,11 @@ class OrchestratorServiceContainer:
                 return {
                     "response": f"Error: Agent {agent_interface.agent_name} returned invalid response format",
                     "agent_lock": None,
+                    "agent_list": [],
                     "tool_calls": [],
                     "error": True
                 }
-            
+            result["agent_list"] = [agent_interface.agent_name]  # Add agent name to response
             # Return the agent result as-is (it should already be in standardized format)
             return result
             
@@ -73,7 +76,7 @@ class OrchestratorServiceContainer:
             error_message = f"Agent {agent_name} failed: {str(e)}"
             
             return {
-                "response": f"I encountered an error while processing your request with {agent_name}: {str(e)}",
+                "response": f"I encountered an error while processing your request with {agent_name}: {str(error_message)}",
                 "agent_lock": None,
                 "tool_calls": [],
                 "error": True
@@ -86,7 +89,7 @@ def get_all_orchestrator_tools(services: OrchestratorServiceContainer) -> List[t
     """
 
     @tool
-    def provide_direct_response(response_text: str) -> dict:
+    def responde_without_agent(response_text: str) -> dict:
         """
         Provide a direct response to the user when no worker routing is needed.
         
@@ -239,7 +242,7 @@ def get_all_orchestrator_tools(services: OrchestratorServiceContainer) -> List[t
             final_plan_stage = None
             all_tool_calls = []
             any_errors = False
-
+            agent_list = []
             for task_info in tasks:
                 worker_name = task_info["worker"]
                 worker_task = task_info["task"]
@@ -266,6 +269,8 @@ def get_all_orchestrator_tools(services: OrchestratorServiceContainer) -> List[t
                         final_plan_stage = result.get('plan_stage')  # Last plan stage wins
                     if result.get('tool_calls'):
                         all_tool_calls.extend(result.get('tool_calls', []))
+                    if result.get('agent_list'):
+                        agent_list.extend(interface.agent_name)
                     if result.get('error'):
                         any_errors = True
                 else:
@@ -278,6 +283,7 @@ def get_all_orchestrator_tools(services: OrchestratorServiceContainer) -> List[t
                 "agent_lock": final_agent_lock,
                 "plan_stage": final_plan_stage,
                 "tool_calls": all_tool_calls,
+                "agent_list": list(agent_list),
                 "error": any_errors
             }
             
@@ -297,7 +303,7 @@ def get_all_orchestrator_tools(services: OrchestratorServiceContainer) -> List[t
             }
 
     return [
-        provide_direct_response,
+        responde_without_agent,
         route_to_transaction_classifier,
         route_to_jar_manager,
         route_to_fee_manager,

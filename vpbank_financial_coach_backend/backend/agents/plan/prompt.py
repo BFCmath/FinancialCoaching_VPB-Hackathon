@@ -10,7 +10,8 @@ from typing import List, Optional
 from backend.models.conversation import ConversationTurnInDB
 
 def build_budget_advisor_prompt(user_input: str, conversation_history: List[ConversationTurnInDB], 
-                               is_follow_up: bool, stage: str) -> str:
+                               is_follow_up: bool, stage: str,
+                               limit_conversation: int = 7) -> str:
     """
     Build focused prompt for Budget Advisor agent using ReAct framework and stages.
     
@@ -27,7 +28,7 @@ def build_budget_advisor_prompt(user_input: str, conversation_history: List[Conv
     # Format conversation history (last 3 relevant turns)
     # Enhanced Pattern 2: Handle ConversationTurnInDB objects
     relevant_history = []
-    for turn in conversation_history:
+    for turn in reversed(conversation_history[:limit_conversation]):
         # Check if this turn involves the plan agent
         if hasattr(turn, 'agent_list') and 'plan' in (turn.agent_list or []):
             relevant_history.append(turn)
@@ -35,7 +36,7 @@ def build_budget_advisor_prompt(user_input: str, conversation_history: List[Conv
             relevant_history.append(turn)
     
     history_lines = []
-    for turn in relevant_history[-3:]:  # Last 3 turns
+    for turn in relevant_history[-limit_conversation:]:  # Last 3 turns
         user_input_text = turn.user_input if hasattr(turn, 'user_input') else str(turn)
         agent_output_text = turn.agent_output if hasattr(turn, 'agent_output') else ""
         
@@ -66,7 +67,7 @@ You are in the information gathering stage. Your goal is to fully understand the
 - `request_clarification(question, suggestion)`: Call this if you don't have know what is this saving for and how much they want to save each month.
 - `propose_plan(financial_plan, jar_changes)`: Call this if you have: context, money to save per month, go to the next stage.
 
-Remember to avoid direct answer, communicate through terminating tools only.
+Remember to AVOID direct answer, communicate through terminating tools only.
 """
 
     elif stage == "2":

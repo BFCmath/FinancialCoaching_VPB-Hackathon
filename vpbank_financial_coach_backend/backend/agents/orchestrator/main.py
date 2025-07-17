@@ -14,7 +14,7 @@ from backend.services.conversation_service import ConversationService
 from .prompt import build_orchestrator_prompt
 from .tools import get_all_orchestrator_tools, OrchestratorServiceContainer
 
-MAX_MEMORY_TURNS = 10
+MAX_MEMORY_TURNS = settings.MAX_MEMORY_TURNS
 
 class OrchestratorAgent:
     """A class-based orchestrator agent following the standard agent pattern."""
@@ -23,13 +23,12 @@ class OrchestratorAgent:
         self.db = db
         self.user_id = user_id
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash-lite-preview-06-17",
-            temperature=0.1,
-            google_api_key=settings.GOOGLE_API_KEY
+            model=settings.MODEL_NAME,
+            temperature=settings.LLM_TEMPERATURE,
+            google_api_key=settings.ORCHESTRATOR_GOOGLE_API_KEY
         )
 
-    async def _get_tools(self) -> List:
-        history = await ConversationService.get_conversation_history(self.db, self.user_id, limit=MAX_MEMORY_TURNS)
+    async def _get_tools(self, history: List[ConversationTurnInDB]) -> List:
         services = OrchestratorServiceContainer(self.db, self.user_id, history)
         return get_all_orchestrator_tools(services)
 
@@ -39,12 +38,12 @@ class OrchestratorAgent:
             # Validate input
             if not task or not task.strip():
                 raise ValueError("Task cannot be empty")
-            
-            tools = await self._get_tools()
-            llm_with_tools = self.llm.bind_tools(tools)
-
+            print("PASS 1")
             history = await ConversationService.get_conversation_history(self.db, self.user_id, limit=MAX_MEMORY_TURNS)
+            print("PASS 2")      
             locked_agent = await ConversationService.get_agent_lock(self.db, self.user_id)
+            tools = await self._get_tools(history)
+            llm_with_tools = self.llm.bind_tools(tools)
 
             # If locked to an agent, route directly to that agent
             if locked_agent:
@@ -68,20 +67,21 @@ class OrchestratorAgent:
                         except Exception as e:
                             # Tool execution failed, return error but keep trying with LLM routing
                             print(f"Direct routing to {locked_agent} failed: {e}")
-
+            print("PASS 3")
             # Build prompt and invoke LLM for routing decision
             prompt = build_orchestrator_prompt(task, history)
             messages = [SystemMessage(content=prompt), HumanMessage(content=task)]
             response = await llm_with_tools.ainvoke(messages)
-
+            if settings.VERBOSE_LOGGING:
+                print(f"📝 Orchestrator response: {response}")
             if not response.tool_calls:
                 return {"response": "I'm not sure how to handle that. Could you rephrase your request?", "requires_follow_up": False}
-
+            print("PASS 4")
             # Execute the chosen tool
             tool_call = response.tool_calls[0]
             tool_name = tool_call['name']
             tool_args = tool_call['args']
-            
+            print("PASS 5")
             tool_func = next((t for t in tools if t.name == tool_name), None)
             if not tool_func:
                 return {"response": f"Error: Could not find tool '{tool_name}'.", "requires_follow_up": False}
@@ -113,7 +113,6 @@ async def process_task_async(task: str, user_id: str, db: AsyncIOMotorDatabase) 
             raise ValueError("User ID cannot be empty") 
         if db is None:
             raise ValueError("Database connection cannot be None")
-        
         # Process the request
         agent = OrchestratorAgent(db, user_id)
         result = await agent.process_request(task.strip())
@@ -123,6 +122,7 @@ async def process_task_async(task: str, user_id: str, db: AsyncIOMotorDatabase) 
         agent_lock = result.get("agent_lock")  # From standardized agent return format
         plan_stage = result.get("plan_stage")  # From plan agent return format
         tool_calls = result.get("tool_calls", [])
+        agent_list = result.get("agent_list", ['orchestrator'])  # Default to orchestrator if not provided
 
         # Create and save conversation turn with proper agent lock and plan stage
         conversation_turn = await ConversationService.add_conversation_turn(
@@ -130,7 +130,7 @@ async def process_task_async(task: str, user_id: str, db: AsyncIOMotorDatabase) 
             user_id=user_id,
             user_input=task.strip(),
             agent_output=agent_output,
-            agent_list=['orchestrator'],
+            agent_list=agent_list,
             tool_call_list=tool_calls,
             agent_lock=agent_lock,  # Set lock from agent response
             plan_stage=plan_stage   # Set plan stage from agent response
@@ -140,7 +140,7 @@ async def process_task_async(task: str, user_id: str, db: AsyncIOMotorDatabase) 
         
     except ValueError as e:
         # Handle validation errors - create error conversation turn
-        error_response = f"Error: {str(e)}"
+        error_response = f"Invalid request: {str(e)}"
         return await ConversationService.add_conversation_turn(
             db=db,
             user_id=user_id or "unknown",
@@ -148,13 +148,12 @@ async def process_task_async(task: str, user_id: str, db: AsyncIOMotorDatabase) 
             agent_output=error_response,
             agent_list=['orchestrator'],
             tool_call_list=[]
-            
         )
         
     except Exception as e:
         # Handle unexpected errors - create error conversation turn  
         traceback.print_exc()
-        error_response = f"Error: {str(e)}"
+        error_response = f"An unexpected error occurred: {str(e)}"
         
         return await ConversationService.add_conversation_turn(
             db=db,

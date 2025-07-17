@@ -81,6 +81,7 @@ def get_all_transaction_tools(services: TransactionFetcherServiceContainer) -> L
             - "Play transactions" → jar_name="play", description="play expenses"
         """
         try:
+            print("call this succesfully!")
             return await TransactionQueryService.get_jar_transactions(
                 services.db, services.user_id, jar_name=jar_name, limit=limit, description=description
             )

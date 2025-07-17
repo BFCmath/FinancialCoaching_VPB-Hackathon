@@ -91,7 +91,7 @@ def get_all_classifier_tools(services: ClassifierServiceContainer) -> List[tool]
     # =============================================================================
 
     @tool
-    async def add_money_to_jar(amount: float, jar_name: str, confidence: int) -> str:
+    async def add_money_to_jar(amount: float, jar_name: str) -> str:
         """
         FINAL ACTION: Classifies a transaction by adding a specific amount to a budget jar.
 
@@ -103,9 +103,6 @@ def get_all_classifier_tools(services: ClassifierServiceContainer) -> List[tool]
             amount: The exact monetary value of the transaction (e.g., 15.50).
             jar_name: The precise name of the target jar the money should be added to.
                       This must match one of the available jars.
-            confidence: Your confidence level (from 0 to 100) in this classification,
-                        based on the clarity of the user's input and any data you fetched.
-
         Returns:
             A success message confirming the transaction has been logged.
         """

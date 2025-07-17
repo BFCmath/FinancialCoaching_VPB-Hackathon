@@ -22,7 +22,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from .config import config
+from backend.core.config import settings
 from .tools import get_stage1_tools, get_stage2_tools, get_stage3_tools, PlanServiceContainer
 from .prompt import build_budget_advisor_prompt
 from backend.models.conversation import ConversationTurnInDB
@@ -64,14 +64,13 @@ class BudgetAdvisorAgent:
         
         # Initialize LLM
         self.llm = ChatGoogleGenerativeAI(
-            model=config.model_name,
-            temperature=config.temperature,
-            google_api_key=config.google_api_key
+            model=settings.MODEL_NAME,
+            temperature=settings.LLM_TEMPERATURE,
+            google_api_key=settings.GOOGLE_API_KEY
         )
         
         # Create service container with user context
         self.services = PlanServiceContainer(db, user_id)
-        
     
     def _get_tools_for_stage(self, stage: str):
         """Get tools for the specified stage."""
@@ -82,8 +81,9 @@ class BudgetAdvisorAgent:
         elif stage == "3":
             return get_stage3_tools(self.services)
         else:
-            return get_stage1_tools(self.services)  # Default to stage 1
-    
+            raise ValueError(f"Invalid stage: {stage}. Must be one of {list(PLAN_STAGES.keys())}")
+            # return get_stage1_tools(self.services)  # Default to stage 1
+
     async def process_request(self, task: str, conversation_history: Optional[List[ConversationTurnInDB]] = None) -> Dict[str, Any]:
         """
         Process user request using ReAct framework with stateless stage management.
@@ -103,8 +103,11 @@ class BudgetAdvisorAgent:
                 raise ValueError("User task cannot be empty for plan agent")
             
             # Get current stage from conversation history (stateless)
-            current_stage = await ConversationService.get_plan_stage(self.db, self.user_id)
-            
+            current_stage = await ConversationService.get_plan_stage(db=self.db, user_id=self.user_id)
+            if not current_stage:
+                if settings.DEBUG_MODE:
+                    print("No current stage found, defaulting to Stage 1")
+                current_stage = "1" 
             # Handle special "ACCEPT" transition from Stage 2 to 3
             if current_stage == "2" and task.strip().upper() == "ACCEPT":
                 current_stage = "3"
@@ -116,23 +119,25 @@ class BudgetAdvisorAgent:
             # Build prompt with stage context
             prompt = build_budget_advisor_prompt(
                 task, 
-                conversation_history or [], 
+                conversation_history, 
                 True,  # agent_active
                 current_stage
             )
-            
-            if config.debug_mode:
+
+            if settings.DEBUG_MODE:
                 print(f"🔍 Processing budget request (Stage {current_stage}): {task}")
             
             # Initialize conversation
             messages = [SystemMessage(content=prompt), HumanMessage(content=task)]
             
             # ReAct loop
-            for i in range(config.max_react_iterations):
+            for i in range(settings.MAX_REACT_ITERATIONS):
+                print(f"🔄 ReAct iteration {i + 1} for stage {current_stage}")
                 response = await llm_with_tools.ainvoke(messages)
-                
+                print(response)
                 # If no tool calls, return direct response
                 if not response.tool_calls:
+                    print("No tool calls made, returning direct response")
                     # Return response with stage metadata for orchestrator
                     return {
                         "response": response.content,
@@ -146,6 +151,7 @@ class BudgetAdvisorAgent:
                 
                 # Process tool calls
                 for tool_call in response.tool_calls:
+                    print(f"🔧 Processing tool call: {tool_call}")
                     tool_name = tool_call['name']
                     tool_args = tool_call['args']
                     tool_calls_made.append(f"{tool_name}(args={tool_args})")
@@ -161,18 +167,20 @@ class BudgetAdvisorAgent:
                         
                         
                         # Check if this is a terminating tool
-                        if tool_name in TERMINATING_TOOLS.get(current_stage, []):
+                        if tool_name in TERMINATING_TOOLS.get(current_stage):
                             # Update stage based on tool result
                             new_stage = str(tool_result.get("plan_stage", current_stage))
                             
+                            user_response = ""
                             # Format response
-                            user_response = tool_result.get("response", "")
+                            if "response" in tool_result:
+                                user_response = tool_result.get("response")
                             if "financial_plan" in tool_result:
-                                user_response = f"**Proposed Financial Plan:**\n\n{tool_result['financial_plan']}"
+                                user_response = f"**Proposed Financial Plan:**\n{tool_result['financial_plan']}"
                                 if "jar_changes" in tool_result:
-                                    user_response += f"\n\n**Jar Changes:** {tool_result['jar_changes']}"
+                                    user_response += f"\n**Jar Changes:** {tool_result['jar_changes']}"
                             
-                            requires_follow_up = tool_result.get("requires_follow_up", False)
+                            requires_follow_up = tool_result.get("requires_follow_up")
                             
                             # Return response with stage metadata for orchestrator to save
                             return {

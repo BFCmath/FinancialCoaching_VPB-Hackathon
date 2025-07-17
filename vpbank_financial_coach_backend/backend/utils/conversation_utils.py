@@ -24,21 +24,33 @@ async def get_conversation_history_for_user(db: AsyncIOMotorDatabase, user_id: s
     ).sort("timestamp", -1).limit(limit)
     
     history = await history_cursor.to_list(length=limit)
-    
-    # Convert ObjectId to string for all documents
-    for turn in history:
-        turn["_id"] = str(turn["_id"])
-    
-    # Reverse the list to have the oldest message first
-    return [conversation.ConversationTurnInDB(**turn) for turn in reversed(history)]
 
+    try:
+        result = []
+        for turn in history:
+            # turn: _id, user_input, agent_output, agent_list, tool_call_list, user_id, timestamp
+            turn["_id"] = str(turn["_id"])  # Ensure _id is a string
+            turn["user_input"] = str(turn.get("user_input"))
+            turn["agent_output"] = str(turn.get("agent_output"))
+            turn["agent_list"] = turn.get("agent_list")
+            turn["tool_call_list"] = turn.get("tool_call_list")
+            turn["user_id"] = turn["user_id"]
+            turn["timestamp"] = turn["timestamp"]
+            result.append(conversation.ConversationTurnInDB(**turn))
+        return result
+    
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"Error converting conversation history: {e}")
+        return []
+    
 async def get_latest_conversation_turn_for_user(db: AsyncIOMotorDatabase, user_id: str) -> Optional[conversation.ConversationTurnInDB]:
     """Gets the most recent conversation turn for a user, useful for checking agent_lock and plan_stage."""
     turn_doc = await db[CONVERSATION_HISTORY_COLLECTION].find_one(
         {"user_id": user_id},
         sort=[("timestamp", -1)]
     )
-    
     if turn_doc:
         turn_doc["_id"] = str(turn_doc["_id"])
         return conversation.ConversationTurnInDB(**turn_doc)

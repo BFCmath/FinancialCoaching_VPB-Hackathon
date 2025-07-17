@@ -24,7 +24,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from backend.models.conversation import ConversationTurnInDB
 
-from .config import config
+from backend.core.config import settings
 from .tools import get_all_transaction_tools, TransactionFetcherServiceContainer
 from .prompt import build_history_fetcher_prompt
 
@@ -36,9 +36,9 @@ class TransactionFetcher:
         self.db = db
         self.user_id = user_id
         self.llm = ChatGoogleGenerativeAI(
-            model=config.model_name,
-            temperature=config.temperature,
-            google_api_key=config.google_api_key
+            model=settings.MODEL_NAME,
+            temperature=settings.LLM_TEMPERATURE,
+            google_api_key=settings.GOOGLE_API_KEY
         )
         
         # Create service container for dependency injection
@@ -80,7 +80,7 @@ class TransactionFetcher:
                 return f"❌ LLM call failed: {str(e)}", tool_calls_made, False
 
             if not response.tool_calls:
-                if config.debug_mode:
+                if settings.DEBUG_MODE:
                     print("🤖 Agent failed to call a tool.")
                 return "❌ Error: I couldn't determine which transactions to fetch. Could you be more specific?", tool_calls_made, False
 
@@ -89,7 +89,7 @@ class TransactionFetcher:
             tool_name = tool_call['name']
             tool_args = tool_call['args']
 
-            if config.debug_mode:
+            if settings.DEBUG_MODE:
                 print(f"🛠️ Using tool: {tool_name}")
 
             for tool in self.tools:
@@ -107,7 +107,7 @@ class TransactionFetcher:
             return f"❌ Error: Tool {tool_name} not found.", tool_calls_made, False
 
         except Exception as e:
-            if config.debug_mode:
+            if settings.DEBUG_MODE:
                 import traceback
                 traceback.print_exc()
             return f"❌ Error during processing: {str(e)}", tool_calls_made, False
@@ -152,7 +152,7 @@ async def process_task(task: str, db: AsyncIOMotorDatabase, user_id: str,
         agent = TransactionFetcher(db=db, user_id=user_id)
         result, tool_calls_made, requires_follow_up = await agent.process_request(task)
 
-        if config.verbose_logging:
+        if settings.VERBOSE_LOGGING:
             print(f"📝 Transaction fetcher completed task. Follow-up: {requires_follow_up}")
 
         return {
@@ -173,7 +173,7 @@ async def process_task(task: str, db: AsyncIOMotorDatabase, user_id: str,
     
     except Exception as e:
         # Handle any unexpected errors
-        if config.debug_mode:
+        if settings.DEBUG_MODE:
             import traceback
             traceback.print_exc()
         

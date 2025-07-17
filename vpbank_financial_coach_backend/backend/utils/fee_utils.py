@@ -53,6 +53,10 @@ async def update_fee_in_db(db: AsyncIOMotorDatabase, user_id: str, fee_name: str
 
 async def delete_fee_by_name(db: AsyncIOMotorDatabase, user_id: str, fee_name: str) -> bool:
     """Deletes a fee by its name for a specific user."""
+    fee_to_delete = await db[FEES_COLLECTION].find_one({"user_id": user_id, "name": fee_name})
+
+    if not fee_to_delete: return False
+    
     result = await db[FEES_COLLECTION].delete_one({"user_id": user_id, "name": fee_name})
     return result.deleted_count > 0
 

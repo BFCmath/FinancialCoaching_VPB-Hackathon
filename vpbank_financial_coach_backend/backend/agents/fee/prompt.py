@@ -27,7 +27,7 @@ async def build_fee_manager_prompt(
     conversation_history: List[ConversationTurnInDB],
     db: AsyncIOMotorDatabase, 
     user_id: str,
-    is_follow_up: bool = False
+    limit_conversation: int = 3
 ) -> str:
     """
     Build complete prompt for LLM fee management with backend database integration.
@@ -82,7 +82,7 @@ async def build_fee_manager_prompt(
     history_str = ""
     if conversation_history:
         history_lines = []
-        for turn in conversation_history[-3:]:  # Get the last 3 turns
+        for turn in reversed(conversation_history[:limit_conversation]):  # Get the last 3 turns
             history_lines.append(f"User: {turn.user_input}")
             history_lines.append(f"Assistant: {turn.agent_output}")
         history_str = "\n".join(history_lines)
@@ -110,6 +110,9 @@ WHEN YOU CAN CREATE A FEE:
 - You have read PREVIOUS CONVERSATION and gathered enough context, decide the fee name and target jar based on the context if enough information is available.
 - Decide the fee name and target jar based on the context if enough information is available.
 Think step by step about what the user wants
+
+WHEN YOU DELETE A FEE:
+- You need to make sure the name of the fee is in existing fees (they can be vietnamese or english with space).
 
 AVAILABLE JARS:
 {jar_info_str}

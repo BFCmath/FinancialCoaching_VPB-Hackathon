@@ -3,7 +3,6 @@ Jar Management Service - Refactored Implementation
 ================================================
 
 This module implements jar management service using utility functions.
-Refactored to use utility functions directly and remove confidence dependencies.
 """
 
 from typing import List, Optional, Tuple, Dict, Any
@@ -598,3 +597,13 @@ class JarManagementService:
             await jar_utils.update_jar_in_db(db, user_id, largest_jar.name, update_data.model_dump(exclude_unset=True))
 
         return f"📊 Redistributed freed percentage: {', '.join(rebalanced_list)}"
+    
+    @staticmethod
+    async def get_all_jars_for_user(db: AsyncIOMotorDatabase, user_id: str) -> List[JarInDB]:
+        """Get all jars for a specific user."""
+        if user_id is None or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+        if db is None:
+            raise ValueError("Database connection cannot be None")
+        
+        return await jar_utils.get_all_jars_for_user(db, user_id)

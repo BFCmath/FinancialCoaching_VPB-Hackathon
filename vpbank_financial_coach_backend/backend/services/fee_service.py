@@ -68,7 +68,16 @@ class FeeManagementService:
             raise ValueError("Database connection cannot be None")
         if fee_name is None or not fee_name.strip():
             raise ValueError("Fee name cannot be empty")
-        return await fee_utils.delete_fee_by_name(db, user_id, fee_name)
+        try:
+            is_deleted = await fee_utils.delete_fee_by_name(db, user_id, fee_name)
+            if is_deleted:
+                return f"✅ Fee {fee_name} deleted successfully"
+            else:
+                return "Please specify the fee name to delete."
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            raise ValueError(f"Failed to delete fee '{fee_name}': {str(e)}")
     
     @staticmethod
     def calculate_next_fee_occurrence(pattern_type: str, pattern_details: Optional[List[int]], from_date: Optional[datetime] = None) -> datetime:
@@ -274,59 +283,62 @@ class FeeManagementService:
     @staticmethod
     async def list_recurring_fees(db: AsyncIOMotorDatabase, user_id: str, 
                                   active_only: bool = True, target_jar: Optional[str] = None) -> str:
-        """List recurring fees with optional filtering."""
-        if user_id is None or not user_id.strip():
-            raise ValueError("User ID cannot be empty")
-        if db is None:
-            raise ValueError("Database connection cannot be None")
+        try: 
+            """List recurring fees with optional filtering."""
+            if user_id is None or not user_id.strip():
+                raise ValueError("User ID cannot be empty")
+            if db is None:
+                raise ValueError("Database connection cannot be None")
+                
+            fees = await FeeManagementService.get_all_recurring_fees(db, user_id)
             
-        fees = await FeeManagementService.get_all_recurring_fees(db, user_id)
-        
-        if active_only:
-            fees = [f for f in fees if f.is_active]
-        
-        if target_jar:
-            jar = await jar_utils.get_jar_by_name(db, user_id, target_jar.lower().replace(' ', '_'))
-            if jar:
-                fees = [f for f in fees if f.target_jar == jar.name]
-            else:
-                raise ValueError(f"Jar '{target_jar}' not found")
-        
-        if not fees:
-            status_desc = "active" if active_only else "all"
-            jar_desc = f" in {target_jar} jar" if target_jar else ""
-            return f"📋 No {status_desc} recurring fees{jar_desc}"
-        
-        # Group by jar
-        by_jar = {}
-        total_monthly = 0.0
-        
-        for fee in fees:
-            by_jar.setdefault(fee.target_jar, []).append(fee)
+            if active_only:
+                fees = [f for f in fees if f.is_active]
             
-            # Rough monthly calculation
-            if fee.pattern_type == "daily":
-                total_monthly += fee.amount * 30
-            elif fee.pattern_type == "weekly":
-                days_count = len(fee.pattern_details) if fee.pattern_details else 7
-                total_monthly += fee.amount * days_count * 4
-            elif fee.pattern_type == "monthly":
-                days_count = len(fee.pattern_details) if fee.pattern_details else 30
-                total_monthly += fee.amount * days_count
-        
-        summary = f"📋 Fee Summary ({len(fees)} active fees):\n"
-        
-        for jar_name, jar_fees in by_jar.items():
-            summary += f"\n{jar_name.upper()} JAR ({len(jar_fees)} fees):\n"
-            for fee in jar_fees:
-                pattern_desc = FeeManagementService._format_pattern_description(fee.pattern_type, fee.pattern_details)
-                summary += f"  • {fee.name}: {fee.description} - {general_utils.format_currency(fee.amount)} {pattern_desc}"
-                summary += f" | Next: {fee.next_occurrence.strftime('%Y-%m-%d')}\n"
+            if target_jar:
+                jar = await jar_utils.get_jar_by_name(db, user_id, target_jar.lower().replace(' ', '_'))
+                if jar:
+                    fees = [f for f in fees if f.target_jar == jar.name]
+                else:
+                    raise ValueError(f"Jar '{target_jar}' not found")
+            
+            if not fees:
+                status_desc = "active" if active_only else "all"
+                jar_desc = f" in {target_jar} jar" if target_jar else ""
+                return f"📋 No {status_desc} recurring fees{jar_desc}"
+            
+            # Group by jar
+            by_jar = {}
+            total_monthly = 0.0
+            
+            for fee in fees:
+                by_jar.setdefault(fee.target_jar, []).append(fee)
+                
+                # Rough monthly calculation
+                if fee.pattern_type == "daily":
+                    total_monthly += fee.amount * 30
+                elif fee.pattern_type == "weekly":
+                    days_count = len(fee.pattern_details) if fee.pattern_details else 7
+                    total_monthly += fee.amount * days_count * 4
+                elif fee.pattern_type == "monthly":
+                    days_count = len(fee.pattern_details) if fee.pattern_details else 30
+                    total_monthly += fee.amount * days_count
+            
+            summary = f"📋 Fee Summary ({len(fees)} active fees):\n"
+            
+            for jar_name, jar_fees in by_jar.items():
+                summary += f"\n{jar_name.upper()} JAR ({len(jar_fees)} fees):\n"
+                for fee in jar_fees:
+                    pattern_desc = FeeManagementService._format_pattern_description(fee.pattern_type, fee.pattern_details)
+                    summary += f"  • {fee.name}: {fee.description} - {general_utils.format_currency(fee.amount)} {pattern_desc}"
+                    summary += f" | Next: {fee.next_occurrence.strftime('%Y-%m-%d')}\n"
 
-        summary += f"\n💰 Estimated monthly total: {general_utils.format_currency(total_monthly)}"
+            summary += f"\n💰 Estimated monthly total: {general_utils.format_currency(total_monthly)}"
 
-        return summary
-    
+            return summary
+        except Exception as e:
+            raise ValueError(f"Failed to list fees: {str(e)}")
+
     @staticmethod
     async def _validate_fee_name(db: AsyncIOMotorDatabase, user_id: str, name: str) -> None:
         """Validate fee name for uniqueness and format."""

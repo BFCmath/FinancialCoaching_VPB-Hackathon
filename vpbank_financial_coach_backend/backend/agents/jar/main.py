@@ -30,7 +30,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from backend.models.conversation import ConversationTurnInDB
 
-from .config import config
+from backend.core.config import settings
 from .tools import get_all_jar_tools, JarServiceContainer
 from .prompt import build_jar_manager_prompt
 
@@ -42,9 +42,9 @@ class JarManager:
         self.db = db
         self.user_id = user_id
         self.llm = ChatGoogleGenerativeAI(
-            model=config.model_name,
-            temperature=config.temperature,
-            google_api_key=config.google_api_key
+            model=settings.MODEL_NAME,
+            temperature=settings.LLM_TEMPERATURE,
+            google_api_key=settings.GOOGLE_API_KEY
         )
         
         # Create service container for dependency injection
@@ -97,7 +97,6 @@ class JarManager:
                 conversation_history,
                 self.db,
                 self.user_id,
-                is_follow_up=len(conversation_history) > 0
             )
             
             # Get LLM's tool decision
@@ -110,8 +109,9 @@ class JarManager:
                 return f"❌ LLM call failed: {str(e)}", tool_calls_made, False
 
             if not response.tool_calls:
-                if config.debug_mode:
-                    print("🤖 Agent failed to call a tool.")
+                if settings.DEBUG_MODE:
+                    print("🤖 Agent failed to call a tool")
+                    print(f"Response: {response}")
                 return "❌ Error: I'm not sure how to handle that jar request. Could you be more specific?", tool_calls_made, False
 
             # Execute the chosen tool
@@ -119,7 +119,7 @@ class JarManager:
             tool_name = tool_call['name']
             tool_args = tool_call['args']
 
-            if config.debug_mode:
+            if settings.DEBUG_MODE:
                 print(f"🛠️ Using tool: {tool_name}")
 
             # Find and execute tool async
@@ -143,7 +143,7 @@ class JarManager:
             return f"❌ Error: Tool {tool_name} not found.", tool_calls_made, False
 
         except Exception as e:
-            if config.debug_mode:
+            if settings.DEBUG_MODE:
                 import traceback
                 traceback.print_exc()
             return f"❌ Error during processing: {str(e)}", tool_calls_made, False
@@ -191,7 +191,7 @@ async def process_task_async(task: str, db: AsyncIOMotorDatabase = None, user_id
         result, tool_calls_made, requires_follow_up = await agent.process_request(task, conversation_history)
 
         # Note: Conversation logging handled at API level in backend pattern
-        if config.verbose_logging:
+        if settings.VERBOSE_LOGGING:
             print(f"📝 Jar manager completed task. Follow-up: {requires_follow_up}")
 
         return {
@@ -212,7 +212,7 @@ async def process_task_async(task: str, db: AsyncIOMotorDatabase = None, user_id
     
     except Exception as e:
         # Handle any unexpected errors
-        if config.debug_mode:
+        if settings.DEBUG_MODE:
             import traceback
             traceback.print_exc()
         

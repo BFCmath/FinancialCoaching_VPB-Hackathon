@@ -93,7 +93,6 @@ def get_all_fee_tools(services: FeeServiceContainer) -> List[tool]:
         pattern_type: str,
         pattern_details: Optional[List[int]],
         target_jar: str,
-        confidence: int
     ) -> str:
         """
         FINAL ACTION: Creates a new recurring fee (subscription, bill, etc.).
@@ -107,12 +106,11 @@ def get_all_fee_tools(services: FeeServiceContainer) -> List[tool]:
             pattern_type: When fee occurs - "daily", "weekly", "monthly"
             pattern_details: For custom patterns, list of day numbers (e.g., [1,15] for monthly on 1st and 15th, [1,2,3] for weekly on Mon, Tue, Wed)
             target_jar: Which jar this fee should come from (Agent should reason based on the jar provided)
-            confidence: Confidence in the decision (0-100)
         """
         try:
             return await FeeManagementService.create_recurring_fee(
                 services.db, services.user_id, name, amount, description, 
-                pattern_type, pattern_details, target_jar, confidence
+                pattern_type, pattern_details, target_jar
             )
         except ValueError as e:
             # Service validation errors
@@ -130,7 +128,6 @@ def get_all_fee_tools(services: FeeServiceContainer) -> List[tool]:
         new_pattern_details: Optional[List[int]] = None,
         new_target_jar: Optional[str] = None,
         disable: bool = False,
-        confidence: int = 85
     ) -> str:
         """
         FINAL ACTION: Updates an existing recurring fee's details or disables it.
@@ -143,12 +140,11 @@ def get_all_fee_tools(services: FeeServiceContainer) -> List[tool]:
             new_pattern_details: New pattern details (optional)
             new_target_jar: New target jar (optional)
             disable: Set to True to disable the fee
-            confidence: LLM confidence (0-100)
         """
         try:
             return await FeeManagementService.adjust_recurring_fee(
                 services.db, services.user_id, fee_name, new_amount, new_description,
-                new_pattern_type, new_pattern_details, new_target_jar, disable, confidence
+                new_pattern_type, new_pattern_details, new_target_jar, disable
             )
         except ValueError as e:
             # Service validation errors
@@ -158,16 +154,15 @@ def get_all_fee_tools(services: FeeServiceContainer) -> List[tool]:
             return f"❌ An unexpected error occurred while adjusting fee: {str(e)}"
 
     @tool
-    async def delete_recurring_fee(fee_name: str, reason: str) -> str:
+    async def delete_recurring_fee(fee_name: str) -> str:
         """
         FINAL ACTION: Deletes (deactivates) a recurring fee.
         
         Args:
             fee_name: Name of fee to delete
-            reason: Reason for deletion
         """
         try:
-            return await FeeManagementService.delete_recurring_fee(services.db, services.user_id, fee_name, reason)
+            return await FeeManagementService.delete_recurring_fee(services.db, services.user_id, fee_name)
         except ValueError as e:
             # Service validation errors
             return f"❌ Failed to delete recurring fee: {str(e)}"

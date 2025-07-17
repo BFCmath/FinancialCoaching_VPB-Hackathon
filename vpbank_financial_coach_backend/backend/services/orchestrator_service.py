@@ -49,7 +49,7 @@ class OrchestratorService:
             # Validate the result is a ConversationTurnInDB object
             if not isinstance(result, ConversationTurnInDB):
                 raise ValueError("Orchestrator returned invalid response type")
-            
+            print(f"✅ Processed message for user {user_id}: {message.strip()}")
             return result
             
         except ImportError as e:

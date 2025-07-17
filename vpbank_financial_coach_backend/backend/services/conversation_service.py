@@ -50,14 +50,19 @@ class ConversationService:
         Raises:
             ValueError: For invalid input parameters
         """
+        print('agent output:', agent_output)
         if not user_id or not user_id.strip():
             raise ValueError("User ID cannot be empty")
         if db is None:
             raise ValueError("Database connection cannot be None")
         if not user_input or not user_input.strip():
             raise ValueError("User input cannot be empty")
-        if not agent_output or not agent_output.strip():
+        if not agent_output:
             raise ValueError("Agent output cannot be empty")
+        try: 
+            agent_output = str(agent_output).strip()
+        except Exception as e:
+            raise ValueError(f"Agent output must be a string: {str(e)}")
         
         # Validate agent_list if provided
         if agent_list is not None and not isinstance(agent_list, list):
@@ -80,7 +85,7 @@ class ConversationService:
         # Create turn dictionary
         turn_dict = {
             "user_input": user_input.strip(),
-            "agent_output": agent_output.strip(),
+            "agent_output": agent_output,
             "agent_list": agent_list or [],
             "tool_call_list": tool_call_list or []
         }
@@ -118,7 +123,7 @@ class ConversationService:
             raise ValueError("Limit must be greater than 0")
         if limit > 100:
             raise ValueError("Limit cannot exceed 100 turns")
-        
+        print("PASS 1.5")
         return await conversation_utils.get_conversation_history_for_user(db, user_id, limit)
     
     @staticmethod

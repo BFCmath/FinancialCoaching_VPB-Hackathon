@@ -79,7 +79,6 @@ class ClassifierInterface(BaseWorkerInterface):
             "Categorize transactions into jars",
             "Handle ambiguous inputs with follow-up",
             "Fetch transaction history for context",
-            "Provide confidence-based classifications"
         ]
 
 def get_agent_interface() -> ClassifierInterface:

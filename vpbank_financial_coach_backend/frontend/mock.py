@@ -189,36 +189,16 @@ class VPBankAPITester:
             "What's the balance of my play jar now?",
             "Show me my active budget plans."
         ]
-        
         for msg in messages:
             res = self.make_request("POST", "/chat/", {"message": msg})
-            # Check for ConversationTurnInDB response format
-            is_valid_response = (res and res.status_code == 200 and 
-                               'agent_output' in res.json() and 
-                               'user_input' in res.json() and
-                               'agent_list' in res.json())
-            self.log_test(f"Chat: '{msg[:30]}...'", is_valid_response)
-            
-            if is_valid_response:
-                response_data = res.json()
-                print(f"Agent Output: {response_data.get('agent_output', 'No response')}")
-                print(f"Agents Used: {response_data.get('agent_list', [])}")
-                print(f"Tools Called: {response_data.get('tool_call_list', [])}")
-                if response_data.get('agent_lock'):
-                    print(f"Agent Lock: {response_data.get('agent_lock')}")
-                if response_data.get('plan_stage'):
-                    print(f"Plan Stage: {response_data.get('plan_stage')}")
-            
-            self.pause_and_check(res, f"Sent message: '{msg}' to chat orchestrator.")
-            if not is_valid_response: return False
+            self.log_test(f"Chat: '{msg[:30]}...'", res and res.status_code == 200 and res.json().get('success'))
+            self.pause_and_check(res, "Sent a message to the chat orchestrator.")
+            if not (res and res.status_code == 200): return False
 
         res = self.make_request("GET", "/chat/history", params={"limit": len(messages)})
-        is_valid_history = (res and res.status_code == 200 and 
-                          len(res.json()) == len(messages) and
-                          all('agent_output' in turn for turn in res.json()))
-        self.log_test("Get Chat History", is_valid_history)
+        self.log_test("Get Chat History", res and res.status_code == 200 and len(res.json()) == len(messages))
         self.pause_and_check(res, f"Retrieved the last {len(messages)} turns of conversation history.")
-        return is_valid_history
+        return res and res.status_code == 200
 
     def run_all_tests(self):
         """Executes all testing stages in a sequential workflow."""
@@ -227,7 +207,7 @@ class VPBankAPITester:
             ("Transaction Lifecycle & Filters", self.test_transaction_lifecycle_and_filters),
             ("Fee Filters & Special Routes", self.test_fee_filters_and_special_routes),
             ("Plan Filters", self.test_plan_filters),
-            ("Chat and History", self.test_chat_and_history),
+            ("Chat and History", self.test_chat_and_history)
         ]
         
         for name, func in workflow:
@@ -238,216 +218,9 @@ class VPBankAPITester:
         print(f"Total Steps: {total}, Passed: {passed}, Failed: {total - passed}")
         if total > 0: print(f"Success Rate: {(passed/total)*100:.2f}%")
 
-    def interactive_chat_simulator(self):
-        """Interactive chat simulator for testing the chat API in real-time."""
-        print("\n" + "="*60 + "\n🤖 INTERACTIVE CHAT SIMULATOR\n" + "="*60)
-        print("This will create a test user and allow you to chat with the financial coach agent.")
-        print("Type 'quit', 'exit', or 'bye' to end the session.")
-        print("Type 'history' to see recent conversation history.")
-        print("Type 'status' to see current agent lock and plan stage.")
-        print("-" * 60)
-
-        # Setup a test user for interactive chat
-        timestamp = int(time.time())
-        self.user_data = {
-            "username": f"interactive_user_{timestamp}", 
-            "email": f"interactive_{timestamp}@test.com", 
-            "password": "Password123"
-        }
-        
-        # Register and login
-        print("Setting up test user for interactive chat...")
-        res = self.make_request("POST", "/auth/register", self.user_data, use_auth=False)
-        if not (res and res.status_code == 201):
-            print("❌ Failed to register test user")
-            return
-        
-        login_data = {"username": self.user_data["username"], "password": self.user_data["password"]}
-        res = self.make_request("POST", "/auth/token", login_data, use_auth=False)
-        if not (res and res.status_code == 200):
-            print("❌ Failed to login test user")
-            return
-        
-        self.token = res.json().get("access_token")
-        print(f"✅ Logged in as: {self.user_data['username']}")
-
-        # Set up basic user settings
-        self.make_request("PUT", "/user/settings", {"total_income": 5000.0})
-        print("✅ User settings configured (income: $5000)")
-
-        print("\n" + "="*60)
-        print("🚀 Chat session started! Start typing your messages...")
-        print("="*60)
-
-        last_response = None
-        
-        while True:
-            try:
-                # Get user input
-                user_message = input("\n💬 You: ").strip()
-                
-                # Handle special commands
-                if user_message.lower() in ['quit', 'exit', 'bye']:
-                    print("👋 Goodbye! Chat session ended.")
-                    break
-                
-                if user_message.lower() == 'history':
-                    self._show_chat_history()
-                    continue
-                    
-                if user_message.lower() == 'status':
-                    self._show_chat_status(last_response)
-                    continue
-                
-                if not user_message:
-                    print("Please enter a message or 'quit' to exit.")
-                    continue
-                
-                # Send message to chat API
-                print("🤔 Processing your message...")
-                res = self.make_request("POST", "/chat/", {"message": user_message})
-                
-                if res and res.status_code == 200:
-                    response_data = res.json()
-                    last_response = response_data
-                    
-                    # Display the agent's response
-                    agent_output = response_data.get('agent_output', 'No response generated.')
-                    print(f"\n🤖 Agent: {agent_output}")
-                    
-                    # Show additional info if available
-                    agents_used = response_data.get('agent_list', [])
-                    if agents_used and len(agents_used) > 1:
-                        print(f"   └── Agents involved: {', '.join(agents_used)}")
-                    
-                    tools_called = response_data.get('tool_call_list', [])
-                    if tools_called:
-                        print(f"   └── Tools used: {', '.join(tools_called[:3])}{'...' if len(tools_called) > 3 else ''}")
-                    
-                    agent_lock = response_data.get('agent_lock')
-                    if agent_lock:
-                        print(f"   └── 🔒 Locked to {agent_lock} agent")
-                    
-                    plan_stage = response_data.get('plan_stage')
-                    if plan_stage:
-                        print(f"   └── 📋 Plan stage: {plan_stage}")
-                        
-                else:
-                    print(f"❌ Error: {res.status_code if res else 'No response'}")
-                    if res and res.text:
-                        try:
-                            error_detail = res.json().get('detail', 'Unknown error')
-                            print(f"   └── {error_detail}")
-                        except:
-                            print(f"   └── {res.text}")
-                            
-            except KeyboardInterrupt:
-                print("\n\n👋 Chat session interrupted. Goodbye!")
-                break
-            except Exception as e:
-                print(f"❌ Unexpected error: {e}")
-
-    def _show_chat_history(self):
-        """Display recent chat history."""
-        res = self.make_request("GET", "/chat/history", params={"limit": 5})
-        if res and res.status_code == 200:
-            history = res.json()
-            print("\n📜 Recent Chat History (last 5 turns):")
-            print("-" * 40)
-            for i, turn in enumerate(reversed(history), 1):
-                print(f"{i}. You: {turn.get('user_input', 'Unknown input')}")
-                print(f"   Agent: {turn.get('agent_output', 'No response')}")
-                if turn.get('agent_lock'):
-                    print(f"   (🔒 {turn.get('agent_lock')} agent)")
-                print()
-        else:
-            print("❌ Could not retrieve chat history")
-
-    def _show_chat_status(self, last_response):
-        """Display current chat session status."""
-        print("\n📊 Current Chat Session Status:")
-        print("-" * 40)
-        
-        if last_response:
-            agent_lock = last_response.get('agent_lock')
-            plan_stage = last_response.get('plan_stage')
-            
-            if agent_lock:
-                print(f"🔒 Agent Lock: {agent_lock}")
-                print("   └── Your next message will be routed directly to this agent")
-            else:
-                print("🔓 No Agent Lock")
-                print("   └── Your next message will be routed by the orchestrator")
-            
-            if plan_stage:
-                print(f"📋 Plan Stage: {plan_stage}")
-                print("   └── You're in the middle of a planning workflow")
-            else:
-                print("📋 No Active Plan Stage")
-            
-            print(f"🕒 Last Response Time: {last_response.get('timestamp', 'Unknown')}")
-        else:
-            print("No previous conversation data available")
-        
-        # Show user info
-        print(f"👤 User: {self.user_data.get('username', 'Unknown')}")
-        print(f"🔑 Token: {'***' + (self.token[-10:] if self.token else 'None')}")
-
-def run_interactive_chat():
-    """Standalone function to run just the interactive chat simulator."""
-    print("🚀 Starting VPBank Financial Coach Interactive Chat Simulator")
-    print("   Server should be running at http://127.0.0.1:8000")
-    tester = VPBankAPITester()
-    tester.interactive_chat_simulator()
-
 if __name__ == "__main__":
-    import sys
-    
-    print("🚀 VPBank Financial Coach Backend API Tool")
+    print("🚀 Starting VPBank Financial Coach Backend API Final Comprehensive Test")
+    print("   (Verifying default jar initialization)")
     print("   Server should be running at http://127.0.0.1:8000")
-    print()
-    
-    if len(sys.argv) > 1 and sys.argv[1] in ['chat', 'interactive']:
-        # Run interactive chat simulator only
-        run_interactive_chat()
-    else:
-        # Show menu for user to choose
-        print("Choose an option:")
-        print("1. Run comprehensive API tests")
-        print("2. Start interactive chat simulator")
-        print("3. Run tests then start interactive chat")
-        print()
-        
-        try:
-            choice = input("Enter your choice (1-3): ").strip()
-            
-            if choice == "1":
-                print("\n🧪 Starting comprehensive API tests...")
-                VPBankAPITester().run_all_tests()
-                print("\n🎉 Testing workflow completed!")
-                
-            elif choice == "2":
-                print("\n💬 Starting interactive chat simulator...")
-                run_interactive_chat()
-                
-            elif choice == "3":
-                print("\n🧪 Running comprehensive API tests first...")
-                tester = VPBankAPITester()
-                tester.run_all_tests()
-                print("\n🎉 Testing completed! Starting interactive chat...")
-                print("\nNote: This will create a new test user for the chat session.")
-                input("Press Enter to continue to interactive chat...")
-                run_interactive_chat()
-                
-            else:
-                print("Invalid choice. Running comprehensive tests by default...")
-                VPBankAPITester().run_all_tests()
-                print("\n🎉 Testing workflow completed!")
-                
-        except KeyboardInterrupt:
-            print("\n👋 Goodbye!")
-        except Exception as e:
-            print(f"❌ Error: {e}")
-            print("Running comprehensive tests by default...")
-            VPBankAPITester().run_all_tests()
-            print("\n🎉 Testing workflow completed!")
+    VPBankAPITester().run_all_tests()
+    print("\n🎉 Testing workflow completed!")

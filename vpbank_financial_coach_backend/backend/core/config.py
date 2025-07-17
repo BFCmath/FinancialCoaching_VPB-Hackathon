@@ -22,16 +22,25 @@ class Settings(BaseSettings):
     DATABASE_NAME: str = os.getenv("DATABASE_NAME", "vpbank_financial_coach")
 
     # --- Agent/LLM Configuration ---
-    # This is the Google API Key required by the orchestrator's main.py
-    GOOGLE_API_KEY: str = Field(default="", description="Google API Key for Gemini models")
+    # Default Google API Key - agents can override with their own
+    GOOGLE_API_KEY: str = Field(default="", description="Default Google API Key for Gemini models")
     
-    # LLM Model Configuration
+    # Agent-specific Google API Keys
+    CLASSIFIER_GOOGLE_API_KEY: str = os.getenv("CLASSIFIER_GOOGLE_API_KEY", "")
+    JAR_GOOGLE_API_KEY: str = os.getenv("JAR_GOOGLE_API_KEY", "")
+    FEE_GOOGLE_API_KEY: str = os.getenv("FEE_GOOGLE_API_KEY", "")
+    PLAN_GOOGLE_API_KEY: str = os.getenv("PLAN_GOOGLE_API_KEY", "")
+    FETCHER_GOOGLE_API_KEY: str = os.getenv("FETCHER_GOOGLE_API_KEY", "")
+    KNOWLEDGE_GOOGLE_API_KEY: str = os.getenv("KNOWLEDGE_GOOGLE_API_KEY", "")
+    ORCHESTRATOR_GOOGLE_API_KEY: str = os.getenv("ORCHESTRATOR_GOOGLE_API_KEY", "")
+    
+    # LLM Model Configuration (shared across all agents)
     MODEL_NAME: str = os.getenv("MODEL_NAME", "gemini-2.5-flash-lite-preview-06-17")
     LLM_TEMPERATURE: float = float(os.getenv("LLM_TEMPERATURE", "0.1"))
-    
-    # Agent Configuration
-    DEBUG: bool = os.getenv("DEBUG", "true").lower() in ("false", "0", "no")
-    VERBOSE_LOGGING: bool = os.getenv("VERBOSE_LOGGING", "true").lower() in ("false", "0", "no")
+    MAX_MEMORY_TURNS: int = int(os.getenv("MAX_MEMORY_TURNS", "10"))
+    # Agent Configuration (shared across all agents)
+    DEBUG_MODE: bool = os.getenv("DEBUG_MODE", "true").lower() in ("true", "1", "yes")
+    VERBOSE_LOGGING: bool = os.getenv("VERBOSE_LOGGING", "true").lower() in ("true", "1", "yes")
     MAX_REACT_ITERATIONS: int = int(os.getenv("MAX_REACT_ITERATIONS", "5"))
     
     @field_validator('GOOGLE_API_KEY')
@@ -46,9 +55,25 @@ class Settings(BaseSettings):
     def __init__(self, **kwargs):
         # Load environment variables for this instance
         super().__init__(**kwargs)
-        # Override with environment variables if not provided
+        # Set default GOOGLE_API_KEY if not provided
         if not self.GOOGLE_API_KEY:
-            self.GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+            self.GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+    
+    def get_agent_api_key(self, agent_name: str) -> str:
+        """Get the Google API key for a specific agent, falling back to default."""
+        agent_key_mapping = {
+            "classifier": self.CLASSIFIER_GOOGLE_API_KEY,
+            "jar": self.JAR_GOOGLE_API_KEY,
+            "fee": self.FEE_GOOGLE_API_KEY,
+            "plan": self.PLAN_GOOGLE_API_KEY,
+            "fetcher": self.FETCHER_GOOGLE_API_KEY,
+            "knowledge": self.KNOWLEDGE_GOOGLE_API_KEY,
+            "orchestrator": self.ORCHESTRATOR_GOOGLE_API_KEY,
+        }
+        
+        # Return agent-specific key if available, otherwise fall back to default
+        agent_key = agent_key_mapping.get(agent_name.lower(), "")
+        return agent_key if agent_key else self.GOOGLE_API_KEY
 
     # --- JWT Authentication ---
     # A strong, randomly generated secret key is crucial for security.

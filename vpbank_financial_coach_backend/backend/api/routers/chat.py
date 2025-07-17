@@ -31,6 +31,7 @@ async def handle_chat_message(
     4. Raises HTTPException for any errors (proper FastAPI error handling)
     """
     try:
+        print(f"💬 User {current_user.id} sent message: {request.message}")
         # Process the message through orchestrator service
         conversation_turn = await OrchestratorService.process_chat_message(
             db=db,
@@ -41,14 +42,13 @@ async def handle_chat_message(
         return conversation_turn
         
     except ValueError as e:
-        print(f"Error processing chat message: {str(e)}")
+        print(e)
         # Handle validation errors from orchestrator service
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
     except Exception as e:
-        print(f"Error processing chat message: {str(e)}")
         # Handle unexpected errors
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -76,14 +76,12 @@ async def get_chat_history(
         return history
         
     except ValueError as e:
-        print(f"Error retrieving chat history: {str(e)}")
         # Handle validation errors from conversation service
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
     except Exception as e:
-        print(f"Error retrieving chat history: {str(e)}")
         # Handle unexpected errors
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

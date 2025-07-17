@@ -26,7 +26,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from backend.models.conversation import ConversationTurnInDB
 
 # Local imports
-from .config import config
+from backend.core.config import settings
 from .tools import get_all_fee_tools, FeeServiceContainer
 from .prompt import build_fee_manager_prompt
 
@@ -38,9 +38,9 @@ class FeeManager:
         self.db = db
         self.user_id = user_id
         self.llm = ChatGoogleGenerativeAI(
-            model=config.model_name,
-            google_api_key=config.google_api_key,
-            temperature=config.temperature
+            model=settings.MODEL_NAME,
+            google_api_key=settings.GOOGLE_API_KEY,
+            temperature=settings.LLM_TEMPERATURE
         )
         
         # Create service container for dependency injection
@@ -93,7 +93,6 @@ class FeeManager:
                 conversation_history,
                 self.db,
                 self.user_id,
-                is_follow_up=True  # Simplified context check for backend
             )
             
             # Get LLM's tool decision
@@ -106,7 +105,7 @@ class FeeManager:
                 return f"❌ LLM call failed: {str(e)}", tool_calls_made, False
 
             if not response.tool_calls:
-                if config.debug_mode:
+                if settings.DEBUG_MODE:
                     print("🤖 Agent failed to call a tool.")
                 return "❌ Error: No action was taken.", tool_calls_made, False
 
@@ -115,7 +114,7 @@ class FeeManager:
             tool_name = tool_call['name']
             tool_args = tool_call['args']
 
-            if config.debug_mode:
+            if settings.DEBUG_MODE:
                 print(f"🛠️ Using tool: {tool_name}")
 
             # Find and execute tool
@@ -139,7 +138,7 @@ class FeeManager:
             return f"❌ Error: Tool {tool_name} not found.", tool_calls_made, False
 
         except Exception as e:
-            if config.debug_mode:
+            if settings.DEBUG_MODE:
                 import traceback
                 traceback.print_exc()
             return f"❌ Error during processing: {str(e)}", tool_calls_made, False
@@ -186,7 +185,7 @@ async def process_task(task: str, db: AsyncIOMotorDatabase = None, user_id: str 
         result, tool_calls_made, requires_follow_up = await agent.process_request(task, conversation_history)
 
         # Note: Conversation logging handled at API level in backend pattern
-        if config.verbose_logging:
+        if settings.VERBOSE_LOGGING:
             print(f"📝 Fee manager completed task. Follow-up: {requires_follow_up}")
 
         return {
@@ -207,7 +206,7 @@ async def process_task(task: str, db: AsyncIOMotorDatabase = None, user_id: str 
     
     except Exception as e:
         # Handle any unexpected errors
-        if config.debug_mode:
+        if settings.DEBUG_MODE:
             import traceback
             traceback.print_exc()
         

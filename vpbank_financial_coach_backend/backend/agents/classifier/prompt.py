@@ -22,7 +22,8 @@ from backend.utils.jar_utils import get_all_jars_for_user
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 async def build_react_classifier_prompt(user_query: str, conversation_history: List[ConversationTurnInDB], 
-                                       db: AsyncIOMotorDatabase, user_id: str) -> str:   
+                                       db: AsyncIOMotorDatabase, user_id: str,
+                                       limit_conversation: int = 3) -> str:   
     """
     Builds the ReAct system prompt for the Transaction Classifier agent.
 
@@ -42,7 +43,7 @@ async def build_react_classifier_prompt(user_query: str, conversation_history: L
     history_str = ""
     if conversation_history:
         history_lines = []
-        for turn in conversation_history: # Get the last 3 turns
+        for turn in reversed(conversation_history[:limit_conversation]):  # Get the last 3 turns
             history_lines.append(f"User: {turn.user_input}")
             history_lines.append(f"Assistant: {turn.agent_output}")
         history_str = "\n".join(history_lines)
